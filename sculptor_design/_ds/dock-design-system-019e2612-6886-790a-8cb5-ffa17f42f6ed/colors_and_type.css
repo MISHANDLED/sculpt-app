@@ -1,0 +1,360 @@
+/* ============================================================================
+ * DOCK DESIGN SYSTEM — Colors, Type, Tokens
+ * Source of truth: dock-design-kit (Grofers/Blinkit, internal)
+ * Lexend font + Dockit icon font + 12-hue color system w/ light & dark themes.
+ * ========================================================================= */
+
+/* ---------- Fonts ---------- */
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('./fonts/Lexend-Light.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/Lexend-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/Lexend-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/Lexend-SemiBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lexend';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/Lexend-Bold.ttf') format('truetype');
+}
+
+/* ============================================================================
+ *  PRIMITIVES — raw color scales + spacing/radii/shadows
+ * ========================================================================= */
+:root {
+  /* ---- Type families ---- */
+  --dock-font-family: 'Lexend', system-ui, -apple-system, sans-serif;
+  --dock-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---- Color primitives ---- */
+  --dock-red-50:#FEF3F2;  --dock-red-100:#FEE4E2; --dock-red-200:#FECDCA; --dock-red-300:#FDA29B;
+  --dock-red-400:#F97066; --dock-red-500:#F04438; --dock-red-600:#D92D20; --dock-red-700:#B42318;
+  --dock-red-800:#912018; --dock-red-900:#7A271A; --dock-red-950:#55160C;
+
+  --dock-green-50:#ECFDF3;  --dock-green-100:#DCFAE6; --dock-green-200:#ABEFC6; --dock-green-300:#75E0A7;
+  --dock-green-400:#47CD89; --dock-green-500:#17B26A; --dock-green-600:#079455; --dock-green-700:#067647;
+  --dock-green-800:#085D3A; --dock-green-900:#074D31; --dock-green-950:#053321;
+
+  --dock-yellow-50:#FEFBE8;  --dock-yellow-100:#FEF7C3; --dock-yellow-200:#FEEE95; --dock-yellow-300:#FDE272;
+  --dock-yellow-400:#FAC515; --dock-yellow-500:#EAAA08; --dock-yellow-600:#CA8504; --dock-yellow-700:#A15C07;
+  --dock-yellow-800:#854A0E; --dock-yellow-900:#713B12; --dock-yellow-950:#542C0D;
+
+  --dock-blue-50:#EFF8FF;  --dock-blue-100:#D1E9FF; --dock-blue-200:#B2DDFF; --dock-blue-300:#84CAFF;
+  --dock-blue-400:#53B1FD; --dock-blue-500:#2E90FA; --dock-blue-600:#1570EF; --dock-blue-700:#175CD3;
+  --dock-blue-800:#1849A9; --dock-blue-900:#194185; --dock-blue-950:#102A56;
+
+  --dock-orange-50:#FEF6EE;  --dock-orange-100:#FDEAD7; --dock-orange-200:#F9DBAF; --dock-orange-300:#F7B27A;
+  --dock-orange-400:#F38744; --dock-orange-500:#EF6820; --dock-orange-600:#E04F16; --dock-orange-700:#B93815;
+  --dock-orange-800:#932F19; --dock-orange-900:#772917; --dock-orange-950:#511C10;
+
+  --dock-teal-50:#F0FDF9;  --dock-teal-100:#CCFBEF; --dock-teal-200:#99F6E0; --dock-teal-300:#5FE9D0;
+  --dock-teal-400:#2ED3B7; --dock-teal-500:#15B79E; --dock-teal-600:#0E9384; --dock-teal-700:#107569;
+  --dock-teal-800:#125D56; --dock-teal-900:#134E48; --dock-teal-950:#0A2926;
+
+  --dock-brown-50:#FCF7F4;  --dock-brown-100:#F7ECE6; --dock-brown-200:#EBD4CC; --dock-brown-300:#DBB7A5;
+  --dock-brown-400:#C08A75; --dock-brown-500:#864129; --dock-brown-600:#703723; --dock-brown-700:#5A2C1C;
+  --dock-brown-800:#472217; --dock-brown-900:#391C13; --dock-brown-950:#241009;
+
+  --dock-pink-50:#FDF2FA;  --dock-pink-100:#FCE7F6; --dock-pink-200:#FCCEEE; --dock-pink-300:#FAA7E0;
+  --dock-pink-400:#F670C7; --dock-pink-500:#EE46BC; --dock-pink-600:#DD2590; --dock-pink-700:#C11574;
+  --dock-pink-800:#9E165F; --dock-pink-900:#851651; --dock-pink-950:#4E0D30;
+
+  --dock-purple-50:#F4F3FF;  --dock-purple-100:#EBE9FE; --dock-purple-200:#D9D6FE; --dock-purple-300:#BDB4FE;
+  --dock-purple-400:#9B8AFB; --dock-purple-500:#7A5AF8; --dock-purple-600:#6938EF; --dock-purple-700:#5925DC;
+  --dock-purple-800:#4A1FB8; --dock-purple-900:#3E1C96; --dock-purple-950:#27115F;
+
+  --dock-indigo-50:#EEF4FF;  --dock-indigo-100:#E0EAFF; --dock-indigo-200:#C7D7FE; --dock-indigo-300:#A4BCFD;
+  --dock-indigo-400:#8098F9; --dock-indigo-500:#6172F3; --dock-indigo-600:#444CE7; --dock-indigo-700:#3538CD;
+  --dock-indigo-800:#2D31A6; --dock-indigo-900:#2D3282; --dock-indigo-950:#1F235B;
+
+  --dock-lime-50:#F3FEE7;  --dock-lime-100:#E4FBCC; --dock-lime-200:#D0F8AB; --dock-lime-300:#A6EF67;
+  --dock-lime-400:#85E13A; --dock-lime-500:#66C61C; --dock-lime-600:#4CA30D; --dock-lime-700:#3B7C0F;
+  --dock-lime-800:#326212; --dock-lime-900:#2B5314; --dock-lime-950:#15290A;
+
+  --dock-cider-50:#FCF8EE;  --dock-cider-100:#F8EFD9; --dock-cider-200:#EDD8B1; --dock-cider-300:#DEBD84;
+  --dock-cider-400:#C99D54; --dock-cider-500:#B48535; --dock-cider-600:#946C27; --dock-cider-700:#79541F;
+  --dock-cider-800:#624219; --dock-cider-900:#4F3616; --dock-cider-950:#2E1F0E;
+
+  /* ---- Neutrals (Grey + Grey-Dark distinct scales for L/D themes) ---- */
+  --dock-grey-50:#F9FAFB;  --dock-grey-100:#F3F4F6; --dock-grey-200:#E5E7EB; --dock-grey-300:#D2D6DB;
+  --dock-grey-400:#9DA4AE; --dock-grey-500:#6C737F; --dock-grey-600:#4D5761; --dock-grey-700:#384250;
+  --dock-grey-800:#1F2A37; --dock-grey-900:#111927; --dock-grey-950:#0D121C;
+
+  --dock-grey-dark-50:#FAFAFA;  --dock-grey-dark-100:#F4F4F5; --dock-grey-dark-200:#EAEAEB; --dock-grey-dark-300:#CACACE;
+  --dock-grey-dark-400:#95959D; --dock-grey-dark-500:#62626A; --dock-grey-dark-600:#43434C; --dock-grey-dark-700:#2F2F37;
+  --dock-grey-dark-800:#202027; --dock-grey-dark-900:#17171C; --dock-grey-dark-950:#0D0D11;
+
+  /* ---- Brand absolutes ---- */
+  --dock-blinkit-green:#318616;
+  --dock-blinkit-black:#1F1F1F;
+  --dock-blinkit-yellow:#F8CB46;
+  --dock-coal:#1C1C1C;
+  --dock-black-light:#0D121C;
+  --dock-black-dark:#0D0D11;
+  --dock-white:#FFFFFF;
+
+  /* ---- Alpha ramps ---- */
+  --dock-alpha-light-5:#FFFFFF0A;    --dock-alpha-light-10:#FFFFFF14;
+  --dock-alpha-light-25:#FFFFFF1F;   --dock-alpha-light-50:#FFFFFF33;
+  --dock-alpha-light-100:#FFFFFF52;  --dock-alpha-light-200:#FFFFFF7A;
+  --dock-alpha-light-300:#FFFFFFA3;  --dock-alpha-light-400:#FFFFFFCC;
+  --dock-alpha-light-450:#FFFFFFE0;  --dock-alpha-light-500:#FFFFFF;
+
+  --dock-alpha-dark-5:#17171C0A;   --dock-alpha-dark-10:#17171C14;
+  --dock-alpha-dark-25:#17171C1F;  --dock-alpha-dark-50:#17171C33;
+  --dock-alpha-dark-100:#17171C52; --dock-alpha-dark-200:#17171C7A;
+  --dock-alpha-dark-300:#17171CA3; --dock-alpha-dark-400:#17171CCC;
+  --dock-alpha-dark-450:#17171CE0; --dock-alpha-dark-500:#17171C;
+
+  /* ---- Spacing scale ---- */
+  --dock-spacing-0:0px;   --dock-spacing-1:1px;   --dock-spacing-2:2px;   --dock-spacing-4:4px;
+  --dock-spacing-6:6px;   --dock-spacing-8:8px;   --dock-spacing-10:10px; --dock-spacing-12:12px;
+  --dock-spacing-16:16px; --dock-spacing-20:20px; --dock-spacing-24:24px; --dock-spacing-28:28px;
+  --dock-spacing-32:32px; --dock-spacing-36:36px; --dock-spacing-40:40px; --dock-spacing-48:48px;
+  --dock-spacing-56:56px; --dock-spacing-64:64px; --dock-spacing-96:96px; --dock-spacing-128:128px;
+
+  /* ---- Border radius ---- */
+  --dock-radius-0:0px;   --dock-radius-2:2px;   --dock-radius-4:4px;   --dock-radius-6:6px;
+  --dock-radius-8:8px;   --dock-radius-10:10px; --dock-radius-12:12px; --dock-radius-16:16px;
+  --dock-radius-20:20px; --dock-radius-24:24px; --dock-radius-28:28px; --dock-radius-32:32px;
+  --dock-radius-max:9999px;
+
+  /* ---- Border width ---- */
+  --dock-border-1:0.5px; --dock-border-2:1px; --dock-border-3:1.5px; --dock-border-4:2px;
+
+  /* ---- Opacity ramps ---- */
+  --dock-opacity-1:0.09; --dock-opacity-2:0.12; --dock-opacity-3:0.18; --dock-opacity-4:0.24;
+  --dock-opacity-5:0.32; --dock-opacity-6:0.48; --dock-opacity-7:0.56; --dock-opacity-8:0.64;
+  --dock-opacity-9:0.72; --dock-opacity-10:0.80; --dock-opacity-11:0.88; --dock-opacity-12:1;
+
+  /* ---- Elevation (omnidirectional + b- bias variants are typical) ---- */
+  --dock-shadow-xs: 0 0 0 1px rgba(23,23,28,0.05), 0 1px 2px 0 rgba(23,23,28,0.1);
+  --dock-shadow-sm: 0 1px 2px 0 rgba(16,24,40,0.06), 0 2px 4px 0 rgba(16,24,40,0.06);
+  --dock-shadow-md: 0 2px 4px 0 rgba(16,24,40,0.06), 0 4px 8px 0 rgba(16,24,40,0.08);
+  --dock-shadow-lg: 0 4px 8px 0 rgba(16,24,40,0.06), 0 12px 16px 0 rgba(16,24,40,0.08);
+  --dock-shadow-xl: 0 8px 16px 0 rgba(16,24,40,0.08), 0 16px 32px 0 rgba(16,24,40,0.08);
+  --dock-shadow-2xl: 0 16px 32px 0 rgba(16,24,40,0.12), 0 24px 48px 0 rgba(16,24,40,0.12);
+  --dock-shadow-b-xs: 0 1px 3px 0 rgba(23,23,28,0.10), 0 1px 2px 0 rgba(23,23,28,0.06);
+  --dock-shadow-b-lg: 0 4px 6px -2px rgba(16,24,40,0.03), 0 12px 16px -4px rgba(16,24,40,0.08);
+
+  /* ---- Typography scale ---- */
+  --dock-size-50: 10px;   --dock-size-50-lh: 14px;
+  --dock-size-100: 12px;  --dock-size-100-lh: 16px;
+  --dock-size-200: 14px;  --dock-size-200-lh: 18px;
+  --dock-size-300: 16px;  --dock-size-300-lh: 20px;
+  --dock-size-400: 18px;  --dock-size-400-lh: 24px;
+  --dock-size-500: 20px;  --dock-size-500-lh: 26px;
+  --dock-size-600: 24px;  --dock-size-600-lh: 30px;
+  --dock-size-700: 28px;  --dock-size-700-lh: 36px;
+  --dock-size-800: 32px;  --dock-size-800-lh: 40px;
+  --dock-size-900: 36px;  --dock-size-900-lh: 46px;
+
+  --dock-display-50: 44px;   --dock-display-50-lh: 52px;
+  --dock-display-100: 52px;  --dock-display-100-lh: 64px;
+  --dock-display-200: 64px;  --dock-display-200-lh: 80px;
+  --dock-display-300: 96px;  --dock-display-300-lh: 112px;
+
+  --dock-weight-light: 300;
+  --dock-weight-regular: 400;
+  --dock-weight-medium: 500;
+  --dock-weight-semibold: 600;
+  --dock-weight-bold: 700;
+}
+
+/* ============================================================================
+ *  SEMANTIC THEME TOKENS — light mode (default)
+ *  These are what app code should consume (e.g. var(--dock-text-primary))
+ * ========================================================================= */
+:root, [data-dock-theme="light"] {
+  /* Backgrounds */
+  --dock-background-primary: var(--dock-grey-100);
+
+  /* Surface */
+  --dock-surface-primary: var(--dock-white);
+  --dock-surface-secondary: var(--dock-grey-50);
+  --dock-surface-tertiary: var(--dock-grey-100);
+  --dock-surface-quaternary: var(--dock-grey-200);
+  --dock-surface-quinary: var(--dock-grey-300);
+  --dock-surface-disabled: var(--dock-grey-100);
+  --dock-surface-dark: var(--dock-grey-900);
+  --dock-surface-dark-intense: var(--dock-black-light);
+  --dock-surface-only-black: var(--dock-black-light);
+  --dock-surface-only-white: var(--dock-white);
+  --dock-surface-brand: var(--dock-blinkit-green);
+  --dock-surface-success-light: var(--dock-green-100);
+  --dock-surface-success-dark: var(--dock-green-600);
+  --dock-surface-warning-light: var(--dock-orange-100);
+  --dock-surface-warning-dark: var(--dock-orange-600);
+  --dock-surface-error-light: var(--dock-red-200);
+  --dock-surface-error-dark: var(--dock-red-600);
+  --dock-surface-discover-light: var(--dock-blue-100);
+  --dock-surface-discover-dark: var(--dock-blue-600);
+  --dock-surface-overlay: var(--dock-alpha-dark-300);
+
+  /* Text */
+  --dock-text-primary: var(--dock-grey-900);
+  --dock-text-secondary: var(--dock-grey-800);
+  --dock-text-tertiary: var(--dock-grey-700);
+  --dock-text-quaternary: var(--dock-grey-500);
+  --dock-text-disabled: var(--dock-grey-400);
+  --dock-text-only-black: var(--dock-black-light);
+  --dock-text-only-white: var(--dock-white);
+  --dock-text-light: var(--dock-white);
+  --dock-text-brand: var(--dock-blinkit-green);
+  --dock-text-success: var(--dock-green-600);
+  --dock-text-warning: var(--dock-orange-600);
+  --dock-text-error: var(--dock-red-600);
+  --dock-text-discover: var(--dock-blue-600);
+  --dock-text-accent-red: var(--dock-red-700);
+
+  /* Icon */
+  --dock-icon-primary: var(--dock-grey-900);
+  --dock-icon-secondary: var(--dock-grey-700);
+  --dock-icon-tertiary: var(--dock-grey-500);
+  --dock-icon-disabled: var(--dock-grey-400);
+  --dock-icon-success: var(--dock-green-600);
+  --dock-icon-warning: var(--dock-orange-600);
+  --dock-icon-error: var(--dock-red-600);
+
+  /* Border */
+  --dock-border-primary: var(--dock-grey-200);
+  --dock-border-secondary: var(--dock-grey-100);
+  --dock-border-tertiary: var(--dock-grey-300);
+  --dock-border-dark: var(--dock-black-light);
+  --dock-border-light: var(--dock-white);
+  --dock-border-disabled: var(--dock-grey-200);
+  --dock-border-success: var(--dock-green-600);
+  --dock-border-warning: var(--dock-orange-600);
+  --dock-border-error: var(--dock-red-600);
+  --dock-border-alpha-dark-normal: var(--dock-alpha-dark-10);
+  --dock-border-alpha-dark-subtle: var(--dock-alpha-dark-5);
+}
+
+/* Dark theme — invert the lights/darks */
+[data-dock-theme="dark"] {
+  --dock-background-primary: var(--dock-black-dark);
+
+  --dock-surface-primary: var(--dock-grey-dark-900);
+  --dock-surface-secondary: var(--dock-grey-dark-800);
+  --dock-surface-tertiary: var(--dock-grey-dark-700);
+  --dock-surface-quaternary: var(--dock-grey-dark-600);
+  --dock-surface-quinary: var(--dock-grey-dark-500);
+  --dock-surface-disabled: var(--dock-grey-dark-700);
+  --dock-surface-dark: var(--dock-grey-dark-50);
+  --dock-surface-dark-intense: var(--dock-white);
+  --dock-surface-only-black: var(--dock-black-dark);
+
+  --dock-text-primary: var(--dock-grey-dark-50);
+  --dock-text-secondary: var(--dock-grey-dark-300);
+  --dock-text-tertiary: var(--dock-grey-dark-400);
+  --dock-text-quaternary: var(--dock-grey-dark-400);
+  --dock-text-disabled: var(--dock-grey-dark-500);
+  --dock-text-only-black: var(--dock-black-dark);
+  --dock-text-light: var(--dock-black-dark);
+
+  --dock-icon-primary: var(--dock-grey-dark-50);
+  --dock-icon-secondary: var(--dock-grey-dark-300);
+  --dock-icon-tertiary: var(--dock-grey-dark-400);
+  --dock-icon-disabled: var(--dock-grey-dark-500);
+
+  --dock-border-primary: var(--dock-grey-dark-700);
+  --dock-border-secondary: var(--dock-grey-dark-800);
+  --dock-border-tertiary: var(--dock-grey-dark-600);
+  --dock-border-dark: var(--dock-white);
+  --dock-border-light: var(--dock-grey-dark-900);
+}
+
+/* ============================================================================
+ *  SEMANTIC TYPE STYLES — drop-in element styles
+ * ========================================================================= */
+html { font-family: var(--dock-font-family); color: var(--dock-text-primary); }
+body { background: var(--dock-background-primary); }
+
+.dock-display-300, .dock-hero {
+  font-family: var(--dock-font-family);
+  font-size: var(--dock-display-300);
+  line-height: var(--dock-display-300-lh);
+  font-weight: var(--dock-weight-bold);
+  letter-spacing: -0.02em;
+}
+.dock-display-200 {
+  font-family: var(--dock-font-family);
+  font-size: var(--dock-display-200);
+  line-height: var(--dock-display-200-lh);
+  font-weight: var(--dock-weight-bold);
+  letter-spacing: -0.02em;
+}
+.dock-display-100 {
+  font-family: var(--dock-font-family);
+  font-size: var(--dock-display-100);
+  line-height: var(--dock-display-100-lh);
+  font-weight: var(--dock-weight-semibold);
+  letter-spacing: -0.015em;
+}
+.dock-display-50 {
+  font-family: var(--dock-font-family);
+  font-size: var(--dock-display-50);
+  line-height: var(--dock-display-50-lh);
+  font-weight: var(--dock-weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.dock-h1, h1.dock {
+  font-size: var(--dock-size-900); line-height: var(--dock-size-900-lh);
+  font-weight: var(--dock-weight-semibold);
+}
+.dock-h2, h2.dock {
+  font-size: var(--dock-size-800); line-height: var(--dock-size-800-lh);
+  font-weight: var(--dock-weight-semibold);
+}
+.dock-h3, h3.dock {
+  font-size: var(--dock-size-700); line-height: var(--dock-size-700-lh);
+  font-weight: var(--dock-weight-semibold);
+}
+.dock-h4, h4.dock {
+  font-size: var(--dock-size-600); line-height: var(--dock-size-600-lh);
+  font-weight: var(--dock-weight-semibold);
+}
+.dock-h5, h5.dock {
+  font-size: var(--dock-size-500); line-height: var(--dock-size-500-lh);
+  font-weight: var(--dock-weight-semibold);
+}
+.dock-h6, h6.dock {
+  font-size: var(--dock-size-400); line-height: var(--dock-size-400-lh);
+  font-weight: var(--dock-weight-semibold);
+}
+
+.dock-body-lg { font-size: var(--dock-size-400); line-height: var(--dock-size-400-lh); }
+.dock-body    { font-size: var(--dock-size-300); line-height: var(--dock-size-300-lh); }
+.dock-body-sm { font-size: var(--dock-size-200); line-height: var(--dock-size-200-lh); }
+.dock-caption { font-size: var(--dock-size-100); line-height: var(--dock-size-100-lh); color: var(--dock-text-tertiary); }
+.dock-overline {
+  font-size: var(--dock-size-50); line-height: var(--dock-size-50-lh);
+  font-weight: var(--dock-weight-medium);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--dock-text-tertiary);
+}
+.dock-mono { font-family: var(--dock-font-mono); }

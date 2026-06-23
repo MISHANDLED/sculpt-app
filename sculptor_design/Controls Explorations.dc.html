@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/dock-design-system-019e2612-6886-790a-8cb5-ffa17f42f6ed/colors_and_type.css">
+<link rel="stylesheet" href="_ds/dock-design-system-019e2612-6886-790a-8cb5-ffa17f42f6ed/assets/dockit-icons.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Lexend', system-ui, sans-serif; }
+  @keyframes ceBreathe {
+    0%,100% { box-shadow: 0 0 0 0 rgba(46,211,183,0), 0 10px 30px rgba(46,211,183,0.20); }
+    50%      { box-shadow: 0 0 0 12px rgba(46,211,183,0), 0 10px 42px rgba(46,211,183,0.40); }
+  }
+  @keyframes ceOrb { 0%,100% { transform: scale(0.82); opacity:0.75; } 50% { transform: scale(1.08); opacity:1; } }
+  @keyframes ceEq { 0%,100% { transform: scaleY(0.4);} 50% { transform: scaleY(1);} }
+</style>
+</helmet>
+
+<div style="min-width:100%; min-height:100vh; width:max-content; box-sizing:border-box; padding:56px 64px; background:#e7e5df; display:flex; flex-direction:column; gap:18px;">
+  <div style="font-family:'Lexend',sans-serif; color:#1f2a37;">
+    <div style="font-size:22px; font-weight:600; letter-spacing:-0.01em;">Secondary controls — 3 calmer takes</div>
+    <div style="font-size:13px; color:#6c737f; margin-top:3px; max-width:840px;">Same lower region of the Sculptor screen, three ways to handle stereo width + motion so it feels calm instead of like a settings panel. Transport (save / play / sleep) is the same quieter treatment in all three so you're only comparing the controls. They're live — drag and tap.</div>
+  </div>
+
+  <div style="display:flex; gap:40px; align-items:flex-start;">
+
+    <!-- ── A — QUIET ─────────────────────────────── -->
+    <div style="flex:none; width:380px;">
+      <div style="font-size:12px; font-weight:600; color:#4d5761; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">A — Quiet</div>
+      <div style="font-size:12px; color:#8a8f98; margin-bottom:12px; height:32px;">No boxes. Hairlines and type only. Motion becomes a calm 3-step instead of a toggle.</div>
+      <div style="background:#0D0D11; border:1px solid #1f1f26; border-radius:26px; overflow:hidden;">
+        <div style="position:relative; height:80px; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 70%); mask-image:linear-gradient(to bottom, transparent, #000 70%);">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; height:100%; padding:0 28px 0; gap:6px;">
+            <sc-for list="{{ eqTop }}" as="b" hint-placeholder-count="8">
+              <div style="flex:1; height:{{ b.h }}; background:linear-gradient(to top,#15B79E,#2ED3B7); border-radius:9999px; opacity:0.55;"></div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:8px 28px 26px;">
+          <!-- stereo -->
+          <div style="display:flex; align-items:baseline; justify-content:space-between;">
+            <span style="font-size:13px; color:#CACACE;">Stereo width</span>
+            <span style="font-size:12px; color:#62626A;">{{ stereoAWord }}</span>
+          </div>
+          <div onPointerDown="{{ aDown }}" onPointerMove="{{ aMove }}" onPointerUp="{{ aUp }}" style="position:relative; height:26px; display:flex; align-items:center; margin-top:6px; cursor:ew-resize; touch-action:none;">
+            <div style="position:absolute; left:0; right:0; height:1px; background:#2a2a32;"></div>
+            <div style="position:absolute; left:{{ stereoAPct }}; width:10px; height:10px; border-radius:9999px; background:#2ED3B7; transform:translateX(-50%);"></div>
+          </div>
+
+          <div style="height:1px; background:#1c1c22; margin:18px 0;"></div>
+
+          <!-- motion -->
+          <div style="font-size:13px; color:#CACACE; margin-bottom:12px;">Motion</div>
+          <div style="display:flex; gap:28px;">
+            <sc-for list="{{ motionA }}" as="m" hint-placeholder-count="3">
+              <div onClick="{{ m.onClick }}" style="cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:7px;">
+                <span style="font-size:14px; font-weight:{{ m.weight }}; color:{{ m.color }};">{{ m.label }}</span>
+                <div style="width:5px; height:5px; border-radius:9999px; background:{{ m.dot }};"></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="height:1px; background:#1c1c22; margin:0 28px;"></div>
+        <div style="padding:22px 28px 26px; display:flex; align-items:center; justify-content:center; gap:34px;">
+          <i class="--dock-icon-bookmark" style="font-size:22px; color:#43434C; cursor:pointer;"></i>
+          <div style="width:72px; height:72px; border-radius:9999px; background:#2ED3B7; display:flex; align-items:center; justify-content:center; cursor:pointer; animation:ceBreathe 3.4s ease-in-out infinite;">
+            <i class="--dock-icon-pause" style="font-size:32px; color:#06231e;"></i>
+          </div>
+          <i class="--dock-icon-bedtime" style="font-size:21px; color:#43434C; cursor:pointer;"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── B — TACTILE DIALS ─────────────────────── -->
+    <div style="flex:none; width:380px;">
+      <div style="font-size:12px; font-weight:600; color:#4d5761; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">B — Tactile dials</div>
+      <div style="font-size:12px; color:#8a8f98; margin-bottom:12px; height:32px;">Two soft dials. Crafted and physical but still quiet. Drag a dial up/down to turn it.</div>
+      <div style="background:#0D0D11; border:1px solid #1f1f26; border-radius:26px; overflow:hidden;">
+        <div style="position:relative; height:80px; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 70%); mask-image:linear-gradient(to bottom, transparent, #000 70%);">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; height:100%; padding:0 28px 0; gap:6px;">
+            <sc-for list="{{ eqTop }}" as="b" hint-placeholder-count="8">
+              <div style="flex:1; height:{{ b.h }}; background:linear-gradient(to top,#15B79E,#2ED3B7); border-radius:9999px; opacity:0.55;"></div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:14px 28px 26px; display:flex; justify-content:space-around;">
+          <sc-for list="{{ dials }}" as="d" hint-placeholder-count="2">
+            <div onPointerDown="{{ d.onDown }}" onPointerMove="{{ d.onMove }}" onPointerUp="{{ d.onUp }}" style="display:flex; flex-direction:column; align-items:center; gap:11px; cursor:ns-resize; touch-action:none;">
+              <div style="position:relative; width:92px; height:92px;">
+                <svg width="92" height="92" viewBox="0 0 92 92" style="transform:rotate(135deg);">
+                  <circle cx="46" cy="46" r="40" fill="none" stroke="#1f1f26" stroke-width="6" stroke-linecap="round" stroke-dasharray="188 251"></circle>
+                  <circle cx="46" cy="46" r="40" fill="none" stroke="#2ED3B7" stroke-width="6" stroke-linecap="round" stroke-dasharray="{{ d.dash }} 251"></circle>
+                </svg>
+                <div style="position:absolute; inset:14px; border-radius:9999px; background:#121217; border:1px solid #22222a; display:flex; align-items:center; justify-content:center;">
+                  <i class="{{ d.icon }}" style="font-size:22px; color:#CACACE;"></i>
+                </div>
+              </div>
+              <div style="text-align:center;">
+                <div style="font-size:13px; color:#CACACE;">{{ d.label }}</div>
+                <div style="font-size:11px; color:#62626A; margin-top:2px;">{{ d.value }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="height:1px; background:#1c1c22; margin:0 28px;"></div>
+        <div style="padding:22px 28px 26px; display:flex; align-items:center; justify-content:center; gap:34px;">
+          <i class="--dock-icon-bookmark" style="font-size:22px; color:#43434C; cursor:pointer;"></i>
+          <div style="width:72px; height:72px; border-radius:9999px; background:#2ED3B7; display:flex; align-items:center; justify-content:center; cursor:pointer; animation:ceBreathe 3.4s ease-in-out infinite;">
+            <i class="--dock-icon-pause" style="font-size:32px; color:#06231e;"></i>
+          </div>
+          <i class="--dock-icon-bedtime" style="font-size:21px; color:#43434C; cursor:pointer;"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── C — AMBIENT ───────────────────────────── -->
+    <div style="flex:none; width:380px;">
+      <div style="font-size:12px; font-weight:600; color:#4d5761; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">C — Ambient</div>
+      <div style="font-size:12px; color:#8a8f98; margin-bottom:12px; height:32px;">Controls become the thing they do. Stereo spreads the dots; motion is a breathing orb you tap to change.</div>
+      <div style="background:#0D0D11; border:1px solid #1f1f26; border-radius:26px; overflow:hidden;">
+        <div style="position:relative; height:80px; -webkit-mask-image:linear-gradient(to bottom, transparent, #000 70%); mask-image:linear-gradient(to bottom, transparent, #000 70%);">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; height:100%; padding:0 28px 0; gap:6px;">
+            <sc-for list="{{ eqTop }}" as="b" hint-placeholder-count="8">
+              <div style="flex:1; height:{{ b.h }}; background:linear-gradient(to top,#15B79E,#2ED3B7); border-radius:9999px; opacity:0.55;"></div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:14px 28px 26px; display:flex; align-items:center; justify-content:space-between;">
+          <!-- stereo spread -->
+          <div onPointerDown="{{ cDown }}" onPointerMove="{{ cMove }}" onPointerUp="{{ cUp }}" style="flex:1; cursor:ew-resize; touch-action:none; padding:8px 0;">
+            <div style="font-size:11px; color:#62626A; margin-bottom:14px;">Stereo width · drag</div>
+            <div style="position:relative; height:34px;">
+              <div style="position:absolute; top:50%; left:0; right:0; height:1px; background:#1c1c22;"></div>
+              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:flex; align-items:center;">
+                <sc-for list="{{ spreadDots }}" as="dot" hint-placeholder-count="5">
+                  <div style="width:7px; height:7px; border-radius:9999px; background:#2ED3B7; margin:0 {{ dot.gap }};"></div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="width:1px; height:64px; background:#1c1c22; margin:0 22px;"></div>
+
+          <!-- motion orb -->
+          <div onClick="{{ cMotionTap }}" style="display:flex; flex-direction:column; align-items:center; gap:10px; cursor:pointer; width:96px;">
+            <div style="width:54px; height:54px; display:flex; align-items:center; justify-content:center;">
+              <div style="width:46px; height:46px; border-radius:9999px; background:radial-gradient(circle at 50% 45%, #2ED3B7, #0e6b5d); animation:ceOrb {{ orbDur }} ease-in-out infinite; animation-play-state:{{ orbPlay }};"></div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:13px; color:#CACACE;">Motion</div>
+              <div style="font-size:11px; color:#62626A; margin-top:2px;">{{ cMotionWord }} · tap</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:1px; background:#1c1c22; margin:0 28px;"></div>
+        <div style="padding:22px 28px 26px; display:flex; align-items:center; justify-content:center; gap:34px;">
+          <i class="--dock-icon-bookmark" style="font-size:22px; color:#43434C; cursor:pointer;"></i>
+          <div style="width:72px; height:72px; border-radius:9999px; background:#2ED3B7; display:flex; align-items:center; justify-content:center; cursor:pointer; animation:ceBreathe 3.4s ease-in-out infinite;">
+            <i class="--dock-icon-pause" style="font-size:32px; color:#06231e;"></i>
+          </div>
+          <i class="--dock-icon-bedtime" style="font-size:21px; color:#43434C; cursor:pointer;"></i>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    stereoA: 0.6, motionA: 'gentle',
+    dialStereo: 0.55, dialMotion: 0.5, dragDial: null,
+    stereoC: 0.55, motionCIdx: 1,
+    dragA: false, dragC: false,
+  };
+  MOTIONS = ['Still', 'Gentle', 'Lively'];
+
+  clampX(e) { const r = e.currentTarget.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); }
+  clampY(e) { const r = e.currentTarget.getBoundingClientRect(); return Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height)); }
+  cap(e) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {} }
+  rel(e) { try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {} }
+
+  renderVals() {
+    const st = this.state;
+    const eqTop = [0.55, 0.78, 0.62, 0.9, 0.5, 0.72, 0.42, 0.6].map(v => ({ h: (v * 100).toFixed(0) + '%' }));
+
+    // A
+    const aWords = ['Mono', 'Narrow', 'Natural', 'Wide', 'Very wide'];
+    const motionA = this.MOTIONS.map(label => {
+      const active = st.motionA === label.toLowerCase();
+      return {
+        label, onClick: () => this.setState({ motionA: label.toLowerCase() }),
+        weight: active ? 600 : 400,
+        color: active ? '#2ED3B7' : '#62626A',
+        dot: active ? '#2ED3B7' : 'transparent',
+      };
+    });
+
+    // B dials
+    const dials = [
+      { key: 'dialStereo', label: 'Stereo', icon: '--dock-icon-headphones', val: st.dialStereo, words: ['Mono', 'Narrow', 'Natural', 'Wide', 'Very wide'] },
+      { key: 'dialMotion', label: 'Motion', icon: '--dock-icon-tune', val: st.dialMotion, words: ['Still', 'Soft', 'Gentle', 'Lively', 'Restless'] },
+    ].map(d => ({
+      label: d.label, icon: d.icon,
+      dash: (d.val * 188).toFixed(0),
+      value: d.words[Math.min(d.words.length - 1, Math.round(d.val * (d.words.length - 1)))],
+      onDown: (e) => { this.cap(e); this.setState({ dragDial: d.key, [d.key]: this.clampY(e) }); },
+      onMove: (e) => { if (st.dragDial === d.key) this.setState({ [d.key]: this.clampY(e) }); },
+      onUp: (e) => { this.rel(e); this.setState({ dragDial: null }); },
+    }));
+
+    // C spread dots — gap grows with width
+    const gap = (3 + st.stereoC * 14).toFixed(1) + 'px';
+    const spreadDots = [0, 1, 2, 3, 4].map(() => ({ gap }));
+    const motionWordsC = ['Still', 'Gentle', 'Lively'];
+    const orbDurs = ['6s', '3.6s', '2s'];
+
+    return {
+      eqTop,
+      // A
+      stereoAPct: (st.stereoA * 100).toFixed(1) + '%',
+      stereoAWord: aWords[Math.min(4, Math.round(st.stereoA * 4))],
+      aDown: (e) => { this.cap(e); this.setState({ dragA: true, stereoA: this.clampX(e) }); },
+      aMove: (e) => { if (st.dragA) this.setState({ stereoA: this.clampX(e) }); },
+      aUp: (e) => { this.rel(e); this.setState({ dragA: false }); },
+      motionA,
+      // B
+      dials,
+      // C
+      spreadDots,
+      cDown: (e) => { this.cap(e); this.setState({ dragC: true, stereoC: this.clampX(e) }); },
+      cMove: (e) => { if (st.dragC) this.setState({ stereoC: this.clampX(e) }); },
+      cUp: (e) => { this.rel(e); this.setState({ dragC: false }); },
+      cMotionTap: () => this.setState({ motionCIdx: (st.motionCIdx + 1) % 3 }),
+      cMotionWord: motionWordsC[st.motionCIdx],
+      orbDur: orbDurs[st.motionCIdx],
+      orbPlay: st.motionCIdx === 0 ? 'paused' : 'running',
+    };
+  }
+}
+</script>
+</body>
+</html>

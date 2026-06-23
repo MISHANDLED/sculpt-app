@@ -8,9 +8,9 @@ struct RootView: View {
         VStack(spacing: 24) {
             Text("Phase 0 — Noise Spike").font(.headline)
 
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 4) {
                 ForEach(0..<8, id: \.self) { i in
-                    VStack {
+                    VStack(spacing: 6) {
                         Slider(
                             value: Binding(
                                 get: { vm.gains[i] },
@@ -18,14 +18,16 @@ struct RootView: View {
                             ),
                             in: -24...12
                         )
+                        .frame(width: 150)               // track length (visual height once rotated)
                         .rotationEffect(.degrees(-90))
-                        .frame(width: 120, height: 30)
-                        .frame(maxHeight: 160)
-                        Text(label(vm.frequencies[i])).font(.caption2)
+                        .frame(width: 34, height: 150)   // narrow layout footprint so 8 fit on screen
+                        Text(label(vm.frequencies[i]))
+                            .font(.caption2)
+                            .fixedSize()                 // keep "250" on one line
                     }
                 }
             }
-            .frame(height: 220)
+            .frame(height: 190)
 
             HStack(spacing: 12) {
                 Button("White") { vm.apply(.white) }

@@ -1,0 +1,29 @@
+import Testing
+@testable import AudioEngine
+
+@Test func hasEightBandsAtExpectedFrequencies() {
+    let e = NoiseEngine()
+    #expect(e.bandCount == 8)
+    let expected: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
+    for i in 0..<e.bandCount {
+        #expect(e.centerFrequency(band: i) == expected[i])
+    }
+}
+
+@Test func setGainClampsToRange() {
+    let e = NoiseEngine()
+    e.setGain(band: 0, dB: 999)
+    #expect(e.gain(band: 0) == 12)
+    e.setGain(band: 0, dB: -999)
+    #expect(e.gain(band: 0) == -24)
+    e.setGain(band: 0, dB: 5)
+    #expect(e.gain(band: 0) == 5)
+}
+
+@Test func applyPresetSetsAllBands() {
+    let e = NoiseEngine()
+    e.apply(.white)
+    for i in 0..<e.bandCount { #expect(e.gain(band: i) == 0) }
+    e.apply(.brown)
+    #expect(e.gain(band: 7) < e.gain(band: 0))
+}

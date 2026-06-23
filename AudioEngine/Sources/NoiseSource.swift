@@ -3,6 +3,7 @@
 /// noise sounds less "digital" than a single uniform sample.
 public struct NoiseSource {
     private var state: UInt64
+    private static let amplitude: Float = 0.15  // headroom below full-scale so post-EQ boosts don't clip
 
     public init(seed: UInt64) {
         // xorshift64 stalls on 0 — substitute a fixed nonzero seed.
@@ -19,6 +20,6 @@ public struct NoiseSource {
             let u = Float(state >> 40) * (1.0 / Float(1 << 24))
             sum += u * 2 - 1
         }
-        return sum / 3
+        return (sum / 3) * Self.amplitude
     }
 }

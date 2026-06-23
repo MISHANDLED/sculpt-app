@@ -64,7 +64,7 @@ public final class NoiseEngine {
 
     public func apply(_ preset: NoisePreset) {
         for (i, g) in preset.gains.enumerated() where i < eq.bands.count {
-            eq.bands[i].gain = g
+            setGain(band: i, dB: g)
         }
     }
 

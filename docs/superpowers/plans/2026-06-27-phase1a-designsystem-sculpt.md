@@ -974,9 +974,12 @@ git commit -m "feat: handle audio interruptions and route changes"
 
 **Files:**
 - Create: `Sculptor/Sources/SculptViewModel.swift`
-- Delete: `Sculptor/Sources/SpikeViewModel.swift`
 - Create: `Sculptor/Tests/SculptViewModelTests.swift`
 - Modify: `Project.swift` (add a `SculptorTests` unit-test target)
+
+Note: `SpikeViewModel.swift` and `RootView.swift` stay in place this task so the
+app target keeps compiling (the test host must build). Both are deleted in Task 10
+when `SculptView` replaces them.
 
 **Interfaces:**
 - Consumes: `NoiseEngine`, `NoisePreset`.
@@ -1030,7 +1033,7 @@ import AudioEngine
 Run: `tuist generate --no-open && xcodebuild test -workspace Sculptor.xcworkspace -scheme Sculptor -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SculptorTests`
 Expected: FAIL — `SculptViewModel` not found.
 
-- [ ] **Step 4: Create `SculptViewModel.swift`** and delete `SpikeViewModel.swift`
+- [ ] **Step 4: Create `SculptViewModel.swift`**
 
 ```swift
 import SwiftUI
@@ -1078,20 +1081,19 @@ final class SculptViewModel: ObservableObject {
 }
 ```
 
-Run: `git rm Sculptor/Sources/SpikeViewModel.swift`
+(`SpikeViewModel.swift` stays in place — deleted in Task 10. The app target must
+keep compiling because it hosts `SculptorTests`.)
 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `xcodebuild test -workspace Sculptor.xcworkspace -scheme Sculptor -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SculptorTests`
-Expected: PASS (2 tests).
-
-(Note: `RootView.swift` still references `SpikeViewModel` and will be replaced in Task 10. If the app target fails to compile here, that is expected — only `-only-testing:SculptorTests` runs the VM tests, which do not depend on `RootView`. Task 10 restores a clean build.)
+Expected: PASS (2 tests). The app target still compiles (`RootView`/`SpikeViewModel` untouched).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add Project.swift Sculptor/Sources/SculptViewModel.swift Sculptor/Tests/SculptViewModelTests.swift
-git commit -m "feat: add SculptViewModel, remove SpikeViewModel"
+git commit -m "feat: add SculptViewModel"
 ```
 
 ---
@@ -1101,6 +1103,7 @@ git commit -m "feat: add SculptViewModel, remove SpikeViewModel"
 **Files:**
 - Create: `Sculptor/Sources/SculptView.swift`
 - Delete: `Sculptor/Sources/RootView.swift`
+- Delete: `Sculptor/Sources/SpikeViewModel.swift`
 - Modify: `Sculptor/Sources/SculptorApp.swift`
 
 **Interfaces:**
@@ -1199,9 +1202,9 @@ struct SculptorApp: App {
 }
 ```
 
-- [ ] **Step 3: Delete the old spike view**
+- [ ] **Step 3: Delete the old spike files**
 
-Run: `git rm Sculptor/Sources/RootView.swift`
+Run: `git rm Sculptor/Sources/RootView.swift Sculptor/Sources/SpikeViewModel.swift`
 
 - [ ] **Step 4: Build, run, and screenshot the app**
 

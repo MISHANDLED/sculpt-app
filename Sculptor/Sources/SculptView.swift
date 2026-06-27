@@ -3,7 +3,7 @@ import AudioEngine
 import DesignSystem
 
 struct SculptView: View {
-    @StateObject private var vm = SculptViewModel()
+    @StateObject private var vm = PlaybackViewModel()
 
     private let presets: [(NoisePreset, String)] = [
         (.white, "White"), (.pink, "Pink"), (.brown, "Brown"),

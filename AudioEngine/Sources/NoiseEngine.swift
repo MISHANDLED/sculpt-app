@@ -6,7 +6,6 @@ import AVFoundation
 public final class NoiseEngine {
     private let engine = AVAudioEngine()
     private let eq: AVAudioUnitEQ
-    private var sourceNode: AVAudioSourceNode!
 
     // Per-channel PRNG state, allocated once. Pointers are captured by the
     // render block so it never retains `self` or allocates on the audio thread.
@@ -28,7 +27,7 @@ public final class NoiseEngine {
         stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
 
         let l = stateL, r = stateR
-        sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+        let sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
             for frame in 0..<Int(frameCount) {
                 for (ch, buffer) in abl.enumerated() {

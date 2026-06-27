@@ -54,6 +54,15 @@ let project = Project(
                 .target(name: "AudioEngine"),
                 .target(name: "DesignSystem")
             ]
+        ),
+        .target(
+            name: "SculptorTests",
+            destinations: .iOS,
+            product: .unitTests,
+            bundleId: "com.sculptor.app.tests",
+            deploymentTargets: .iOS("17.0"),
+            sources: ["Sculptor/Tests/**"],
+            dependencies: [.target(name: "Sculptor")]
         )
     ]
 )

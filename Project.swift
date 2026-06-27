@@ -22,6 +22,24 @@ let project = Project(
             dependencies: [.target(name: "AudioEngine")]
         ),
         .target(
+            name: "DesignSystem",
+            destinations: .iOS,
+            product: .framework,
+            bundleId: "com.sculptor.designsystem",
+            deploymentTargets: .iOS("17.0"),
+            sources: ["DesignSystem/Sources/**"],
+            dependencies: []
+        ),
+        .target(
+            name: "DesignSystemTests",
+            destinations: .iOS,
+            product: .unitTests,
+            bundleId: "com.sculptor.designsystem.tests",
+            deploymentTargets: .iOS("17.0"),
+            sources: ["DesignSystem/Tests/**"],
+            dependencies: [.target(name: "DesignSystem")]
+        ),
+        .target(
             name: "Sculptor",
             destinations: .iOS,
             product: .app,
@@ -31,7 +49,10 @@ let project = Project(
                 "UILaunchScreen": [:]
             ]),
             sources: ["Sculptor/Sources/**"],
-            dependencies: [.target(name: "AudioEngine")]
+            dependencies: [
+                .target(name: "AudioEngine"),
+                .target(name: "DesignSystem")
+            ]
         )
     ]
 )

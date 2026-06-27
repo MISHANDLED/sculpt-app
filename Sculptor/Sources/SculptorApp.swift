@@ -4,7 +4,7 @@ import SwiftUI
 struct SculptorApp: App {
     var body: some Scene {
         WindowGroup {
-            SculptView()
+            RootTabView()
         }
     }
 }

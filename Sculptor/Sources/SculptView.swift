@@ -2,7 +2,7 @@ import SwiftUI
 import DesignSystem
 
 struct SculptView: View {
-    @StateObject private var vm = PlaybackViewModel()
+    @ObservedObject var vm: PlaybackViewModel
 
     var body: some View {
         ZStack {
@@ -38,8 +38,6 @@ struct SculptView: View {
 
                 PresetChipsRow(vm: vm)
 
-                DockButton(title: vm.isPlaying ? "Pause" : "Play") { vm.togglePlay() }
-
                 if let err = vm.errorText {
                     Text(err).font(DockType.font(12)).foregroundStyle(.red)
                 }
@@ -55,4 +53,4 @@ struct SculptView: View {
     }
 }
 
-#Preview { SculptView() }
+#Preview { SculptView(vm: PlaybackViewModel()) }

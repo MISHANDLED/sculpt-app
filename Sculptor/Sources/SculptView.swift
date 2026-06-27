@@ -1,14 +1,8 @@
 import SwiftUI
-import AudioEngine
 import DesignSystem
 
 struct SculptView: View {
     @StateObject private var vm = PlaybackViewModel()
-
-    private let presets: [(NoisePreset, String)] = [
-        (.white, "White"), (.pink, "Pink"), (.brown, "Brown"),
-        (.grey, "Grey"), (.speechBlocker, "Speech blocker")
-    ]
 
     var body: some View {
         ZStack {
@@ -42,15 +36,7 @@ struct SculptView: View {
                     }
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: DockSpacing.sm) {
-                        ForEach(presets, id: \.0) { preset, title in
-                            PresetChip(title: title, isSelected: vm.selectedPreset == preset) {
-                                vm.select(preset)
-                            }
-                        }
-                    }
-                }
+                PresetChipsRow(vm: vm)
 
                 DockButton(title: vm.isPlaying ? "Pause" : "Play") { vm.togglePlay() }
 

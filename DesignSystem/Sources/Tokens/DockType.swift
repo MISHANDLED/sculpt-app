@@ -6,13 +6,15 @@ public enum DockType {
     }
 
     /// Pure map from a semantic weight to the bundled font's PostScript name.
+    /// The Dock design system ships Lexend with `Dock-`-prefixed PostScript names
+    /// (the `.ttf` filenames are `Lexend-*`, but the internal names are these).
     public static func lexendFontName(for weight: Weight) -> String {
         switch weight {
-        case .light:    return "Lexend-Light"
-        case .regular:  return "Lexend-Regular"
-        case .medium:   return "Lexend-Medium"
-        case .semibold: return "Lexend-SemiBold"
-        case .bold:     return "Lexend-Bold"
+        case .light:    return "Dock-Lexend-Light"
+        case .regular:  return "Dock-Lexend-Regular"
+        case .medium:   return "Dock-Lexend-Medium"
+        case .semibold: return "Dock-Lexend-SemiBold"
+        case .bold:     return "Dock-Lexend-Bold"
         }
     }
 

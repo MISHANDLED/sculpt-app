@@ -3,13 +3,13 @@ import UIKit
 @testable import DesignSystem
 
 @Test func weightMapsToPostScriptName() {
-    #expect(DockType.lexendFontName(for: .regular) == "Lexend-Regular")
-    #expect(DockType.lexendFontName(for: .bold) == "Lexend-Bold")
-    #expect(DockType.lexendFontName(for: .semibold) == "Lexend-SemiBold")
+    #expect(DockType.lexendFontName(for: .regular) == "Dock-Lexend-Regular")
+    #expect(DockType.lexendFontName(for: .bold) == "Dock-Lexend-Bold")
+    #expect(DockType.lexendFontName(for: .semibold) == "Dock-Lexend-SemiBold")
 }
 
 @Test func registeredFontIsResolvable() {
     FontRegistrar.registerFonts()
-    #expect(UIFont(name: "Lexend-Regular", size: 12) != nil)
-    #expect(UIFont(name: "Lexend-Bold", size: 12) != nil)
+    #expect(UIFont(name: "Dock-Lexend-Regular", size: 12) != nil)
+    #expect(UIFont(name: "Dock-Lexend-Bold", size: 12) != nil)
 }

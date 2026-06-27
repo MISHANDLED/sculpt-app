@@ -28,6 +28,7 @@ let project = Project(
             bundleId: "com.sculptor.designsystem",
             deploymentTargets: .iOS("17.0"),
             sources: ["DesignSystem/Sources/**"],
+            resources: ["DesignSystem/Resources/**"],
             dependencies: []
         ),
         .target(

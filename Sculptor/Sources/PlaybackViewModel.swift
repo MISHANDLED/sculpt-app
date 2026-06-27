@@ -48,6 +48,7 @@ final class PlaybackViewModel: ObservableObject {
 
     /// Updates the published scope window. Internal seam for the engine callback and tests.
     func _ingestScopeSamples(_ window: [Float]) {
+        guard isPlaying else { return }
         scopeSamples = window
     }
 }

@@ -52,7 +52,7 @@ public final class NoiseEngine {
             let frames = Int(buffer.frameLength)
             let samples = Array(UnsafeBufferPointer(start: channel, count: frames))
             let window = downsample(samples, to: Self.scopePointCount)
-            DispatchQueue.main.async { self.onScopeSamples?(window) }
+            DispatchQueue.main.async { [weak self] in self?.onScopeSamples?(window) }
         }
         scopeTapInstalled = true
     }

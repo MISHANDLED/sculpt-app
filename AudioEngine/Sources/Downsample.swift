@@ -1,5 +1,3 @@
-import Foundation
-
 /// Block-averages `samples` into exactly `count` contiguous blocks (the mean of
 /// each block). `count` is clamped to >= 1. Empty input returns []. Input shorter
 /// than `count` is returned unchanged.
@@ -12,6 +10,7 @@ public func downsample(_ samples: [Float], to count: Int) -> [Float] {
     for i in 0..<k {
         let lo = i * n / k
         let hi = (i + 1) * n / k
+        // Guard against a zero-width block (hi == lo) from integer rounding.
         let end = max(hi, lo + 1)
         var sum: Float = 0
         var c = 0

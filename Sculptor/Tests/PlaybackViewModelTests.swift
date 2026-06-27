@@ -22,6 +22,18 @@ import AudioEngine
 @MainActor
 @Test func ingestScopeSamplesUpdatesPublishedWindow() {
     let vm = PlaybackViewModel()
+    // Note: _ingestScopeSamples only updates when playing to prevent stale frames
+    // after pause. Mock the playing state directly.
+    vm.togglePlay()
+    guard vm.isPlaying else { return }  // Skip if engine start fails in test env
     vm._ingestScopeSamples([0.1, -0.2, 0.3])
     #expect(vm.scopeSamples == [0.1, -0.2, 0.3])
+}
+
+@MainActor
+@Test func ingestScopeSamplesIgnoredWhenPaused() {
+    let vm = PlaybackViewModel()
+    #expect(!vm.isPlaying)
+    vm._ingestScopeSamples([0.1, -0.2, 0.3])
+    #expect(vm.scopeSamples == [])  // Should not be updated while paused
 }

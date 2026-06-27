@@ -11,6 +11,14 @@ public final class NoiseEngine {
     /// graph is valid before the audio session is active.
     let outputFormat = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
 
+    /// Whether the engine is currently producing audio. Driven by start/stop
+    /// and by interruption/route handling. Observed by the UI.
+    public private(set) var isPlaying = false {
+        didSet { if oldValue != isPlaying { onPlaybackStateChange?(isPlaying) } }
+    }
+    /// Fired on the main queue whenever `isPlaying` changes.
+    public var onPlaybackStateChange: ((Bool) -> Void)?
+
     // Per-channel PRNG state, allocated once. Pointers are captured by the
     // render block so it never retains `self` or allocates on the audio thread.
     private let stateL = UnsafeMutablePointer<NoiseSource>.allocate(capacity: 1)
@@ -47,9 +55,16 @@ public final class NoiseEngine {
         engine.attach(eq)
         engine.connect(sourceNode, to: eq, format: outputFormat)
         engine.connect(eq, to: engine.mainMixerNode, format: outputFormat)
+
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(handleInterruption(_:)),
+                       name: AVAudioSession.interruptionNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleRouteChange(_:)),
+                       name: AVAudioSession.routeChangeNotification, object: nil)
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         stateL.deinitialize(count: 1); stateL.deallocate()
         stateR.deinitialize(count: 1); stateR.deallocate()
     }
@@ -75,10 +90,32 @@ public final class NoiseEngine {
         try session.setCategory(.playback, mode: .default)
         try session.setActive(true)
         if !engine.isRunning { try engine.start() }
+        isPlaying = true
     }
 
     public func stop() {
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false)
+        isPlaying = false
+    }
+
+    @objc private func handleInterruption(_ note: Notification) {
+        guard let info = note.userInfo,
+              let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        let opts = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
+            .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+        switch interruptionAction(type: type, options: opts, wasPlaying: isPlaying) {
+        case .pause:  stop()
+        case .resume: try? start()
+        case .none:   break
+        }
+    }
+
+    @objc private func handleRouteChange(_ note: Notification) {
+        guard let info = note.userInfo,
+              let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+        if routeChangeAction(reason: reason) == .pause { stop() }
     }
 }

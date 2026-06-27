@@ -26,11 +26,43 @@ public final class NoiseEngine {
     /// asynchronously on the main queue, even when interrupted on a background thread.
     public var onPlaybackStateChange: ((Bool) -> Void)?
 
+    /// Fired on the main queue with a downsampled (~128-point) mono window of
+    /// recent output, for the Now Playing oscilloscope. Nil when no consumer.
+    public var onScopeSamples: (([Float]) -> Void)?
+
+    private var scopeTapInstalled = false
+    private static let scopeBufferSize: AVAudioFrameCount = 4096
+    private static let scopePointCount = 128
+
     /// Remembers the pre-interruption playing state so `.ended` can resume correctly
     /// even though `stop()` clears `isPlaying` during `.began` handling.
     var wasPlayingBeforeInterruption = false
 
     // MARK: - Testability seams (internal, not for production callers)
+
+    /// Whether the scope tap is currently installed.
+    var isScopeTapInstalled: Bool { scopeTapInstalled }
+
+    /// Installs an output tap that downsamples each buffer and delivers it on the
+    /// main queue. Idempotent. Internal (called by start(); exposed for tests).
+    func _installScopeTap() {
+        guard !scopeTapInstalled else { return }
+        eq.installTap(onBus: 0, bufferSize: Self.scopeBufferSize, format: nil) { [weak self] buffer, _ in
+            guard let self, let channel = buffer.floatChannelData?[0] else { return }
+            let frames = Int(buffer.frameLength)
+            let samples = Array(UnsafeBufferPointer(start: channel, count: frames))
+            let window = downsample(samples, to: Self.scopePointCount)
+            DispatchQueue.main.async { self.onScopeSamples?(window) }
+        }
+        scopeTapInstalled = true
+    }
+
+    /// Removes the scope tap if installed. Idempotent.
+    func _removeScopeTap() {
+        guard scopeTapInstalled else { return }
+        eq.removeTap(onBus: 0)
+        scopeTapInstalled = false
+    }
 
     /// For unit tests only: inject a pre-interruption playing state without touching
     /// the live audio session.
@@ -116,9 +148,11 @@ public final class NoiseEngine {
         try session.setActive(true)
         if !engine.isRunning { try engine.start() }
         isPlaying = true
+        _installScopeTap()
     }
 
     public func stop() {
+        _removeScopeTap()
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false)
         isPlaying = false

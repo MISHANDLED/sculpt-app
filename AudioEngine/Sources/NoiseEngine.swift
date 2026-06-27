@@ -7,6 +7,10 @@ public final class NoiseEngine {
     private let engine = AVAudioEngine()
     private let eq: AVAudioUnitEQ
 
+    /// Explicit graph format. Built independently of the output node so the
+    /// graph is valid before the audio session is active.
+    let outputFormat = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+
     // Per-channel PRNG state, allocated once. Pointers are captured by the
     // render block so it never retains `self` or allocates on the audio thread.
     private let stateL = UnsafeMutablePointer<NoiseSource>.allocate(capacity: 1)
@@ -41,9 +45,8 @@ public final class NoiseEngine {
 
         engine.attach(sourceNode)
         engine.attach(eq)
-        let format = engine.outputNode.inputFormat(forBus: 0)
-        engine.connect(sourceNode, to: eq, format: format)
-        engine.connect(eq, to: engine.mainMixerNode, format: format)
+        engine.connect(sourceNode, to: eq, format: outputFormat)
+        engine.connect(eq, to: engine.mainMixerNode, format: outputFormat)
     }
 
     deinit {

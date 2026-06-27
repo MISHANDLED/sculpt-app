@@ -14,10 +14,35 @@ public final class NoiseEngine {
     /// Whether the engine is currently producing audio. Driven by start/stop
     /// and by interruption/route handling. Observed by the UI.
     public private(set) var isPlaying = false {
-        didSet { if oldValue != isPlaying { onPlaybackStateChange?(isPlaying) } }
+        didSet {
+            if oldValue != isPlaying {
+                let cb = onPlaybackStateChange
+                let v = isPlaying
+                DispatchQueue.main.async { cb?(v) }
+            }
+        }
     }
-    /// Fired on the main queue whenever `isPlaying` changes.
+    /// Fired on the main queue whenever `isPlaying` changes. Always dispatched
+    /// asynchronously on the main queue, even when interrupted on a background thread.
     public var onPlaybackStateChange: ((Bool) -> Void)?
+
+    /// Remembers the pre-interruption playing state so `.ended` can resume correctly
+    /// even though `stop()` clears `isPlaying` during `.began` handling.
+    var wasPlayingBeforeInterruption = false
+
+    // MARK: - Testability seams (internal, not for production callers)
+
+    /// For unit tests only: inject a pre-interruption playing state without touching
+    /// the live audio session.
+    func _setWasPlayingBeforeInterruption(_ v: Bool) { wasPlayingBeforeInterruption = v }
+
+    /// For unit tests only: returns true if an `.ended` interruption with the given
+    /// options would trigger a resume given the current `wasPlayingBeforeInterruption`.
+    func _resumeDecisionForEndedInterruption(
+        options: AVAudioSession.InterruptionOptions
+    ) -> Bool {
+        interruptionAction(type: .ended, options: options, wasPlaying: wasPlayingBeforeInterruption) == .resume
+    }
 
     // Per-channel PRNG state, allocated once. Pointers are captured by the
     // render block so it never retains `self` or allocates on the audio thread.
@@ -105,7 +130,9 @@ public final class NoiseEngine {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         let opts = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
             .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
-        switch interruptionAction(type: type, options: opts, wasPlaying: isPlaying) {
+        // Capture playing state BEFORE stop() clears isPlaying on .began.
+        if type == .began { wasPlayingBeforeInterruption = isPlaying }
+        switch interruptionAction(type: type, options: opts, wasPlaying: wasPlayingBeforeInterruption) {
         case .pause:  stop()
         case .resume: try? start()
         case .none:   break

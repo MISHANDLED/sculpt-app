@@ -12,4 +12,6 @@ import UIKit
     FontRegistrar.registerFonts()
     #expect(UIFont(name: "Dock-Lexend-Regular", size: 12) != nil)
     #expect(UIFont(name: "Dock-Lexend-Bold", size: 12) != nil)
+    #expect(UIFont(name: "Dock-Lexend-Medium", size: 12) != nil)
+    #expect(UIFont(name: "Dock-Lexend-SemiBold", size: 12) != nil)
 }

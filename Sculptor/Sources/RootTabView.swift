@@ -27,7 +27,7 @@ struct RootTabView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            NowPlayingView(vm: vm)
+            HomeView(vm: vm, onOpenSculpt: { selection = .sculpt }, onOpenPresets: { selection = .presets }, onOpenTimer: {})
                 .tabItem { Label(AppTab.nowPlaying.title, systemImage: AppTab.nowPlaying.systemImage) }
                 .tag(AppTab.nowPlaying)
             SculptView(vm: vm)

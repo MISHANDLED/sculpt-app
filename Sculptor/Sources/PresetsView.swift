@@ -9,9 +9,10 @@ struct PresetsView: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
 
-    @State private var showingSave = false
-    @State private var newName = ""
     @State private var editMode = EditMode.inactive
+    @State private var renamingID: UUID?
+    @State private var renameText = ""
+    @FocusState private var renameFieldFocused: Bool
 
     private let builtins: [(NoisePreset, String, String)] = [
         (.brown, "Brown", "Deep, low-end rumble"),
@@ -46,14 +47,24 @@ struct PresetsView: View {
                                 .listRowBackground(DockColor.surface1)
                         } else {
                             ForEach(customPresets) { preset in
-                                PresetRow(
-                                    title: preset.name,
+                                CustomPresetRow(
+                                    name: preset.name,
                                     subtitle: "Custom · \(bandsRaisedCount(preset.gains)) bands raised",
                                     gains: preset.gains,
-                                    isActive: !vm.isEdited && vm.selection == .custom(preset.id)
+                                    isActive: !vm.isEdited && vm.selection == .custom(preset.id),
+                                    isRenaming: renamingID == preset.id,
+                                    renameText: $renameText,
+                                    renameFocus: $renameFieldFocused,
+                                    onBeginRename: { beginRename(preset) },
+                                    onCommitRename: { commitRename(preset) },
+                                    onCopy: { copyPreset(preset) },
+                                    onDelete: { context.delete(preset) }
                                 )
                                 .listRowBackground(DockColor.surface1)
-                                .onTapGesture { vm.applyCustom(id: preset.id, gains: preset.gains) }
+                                .onTapGesture {
+                                    guard renamingID == nil else { return }
+                                    vm.applyCustom(id: preset.id, gains: preset.gains)
+                                }
                             }
                             .onMove { indices, newOffset in
                                 var items = customPresets
@@ -68,8 +79,7 @@ struct PresetsView: View {
 
                     Section {
                         Button {
-                            newName = ""
-                            showingSave = true
+                            saveCurrentAsPreset()
                         } label: {
                             Label("Save current as preset", systemImage: "plus")
                                 .font(DockType.font(16, .medium))
@@ -80,14 +90,11 @@ struct PresetsView: View {
                 }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
-                .alert("Save preset", isPresented: $showingSave) {
-                    TextField("Name", text: $newName)
-                    Button("Save") { savePreset() }
-                    Button("Cancel", role: .cancel) {}
-                }
                 .environment(\.editMode, $editMode)
             }
         }
+        .onAppear { consumePendingRename() }
+        .onChange(of: vm.presetToRename) { _, _ in consumePendingRename() }
     }
 
     private var navHeader: some View {
@@ -112,11 +119,38 @@ struct PresetsView: View {
         .padding(DockSpacing.xl)
     }
 
-    private func savePreset() {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = trimmed.isEmpty ? "Custom" : trimmed
+    // MARK: - Actions
+
+    private func beginRename(_ preset: CustomPreset) {
+        renameText = preset.name
+        renamingID = preset.id
+    }
+
+    private func commitRename(_ preset: CustomPreset) {
+        preset.name = sanitizedRename(old: preset.name, new: renameText)
+        renamingID = nil
+    }
+
+    private func copyPreset(_ preset: CustomPreset) {
         let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
-        context.insert(CustomPreset(name: name, gains: vm.gains, sortIndex: nextIndex))
+        context.insert(CustomPreset(name: copyName(of: preset.name), gains: preset.gains, sortIndex: nextIndex))
+    }
+
+    private func saveCurrentAsPreset() {
+        let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
+        let preset = CustomPreset(name: "Custom", gains: vm.gains, sortIndex: nextIndex)
+        context.insert(preset)
+        renameText = preset.name
+        renamingID = preset.id
+    }
+
+    private func consumePendingRename() {
+        guard let id = vm.presetToRename else { return }
+        if let preset = customPresets.first(where: { $0.id == id }) {
+            renameText = preset.name
+            renamingID = id
+        }
+        vm.presetToRename = nil
     }
 }
 

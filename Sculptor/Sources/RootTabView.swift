@@ -33,7 +33,7 @@ struct RootTabView: View {
             SculptView(vm: vm)
                 .tabItem { Label(AppTab.sculpt.title, systemImage: AppTab.sculpt.systemImage) }
                 .tag(AppTab.sculpt)
-            PresetsPlaceholderView()
+            PresetsView(vm: vm)
                 .tabItem { Label(AppTab.presets.title, systemImage: AppTab.presets.systemImage) }
                 .tag(AppTab.presets)
         }

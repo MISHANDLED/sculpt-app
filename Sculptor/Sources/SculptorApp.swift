@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct SculptorApp: App {
@@ -6,5 +7,6 @@ struct SculptorApp: App {
         WindowGroup {
             RootTabView()
         }
+        .modelContainer(for: CustomPreset.self)
     }
 }

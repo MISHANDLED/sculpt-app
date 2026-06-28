@@ -11,6 +11,7 @@ struct PresetsView: View {
 
     @State private var showingSave = false
     @State private var newName = ""
+    @State private var editMode = EditMode.inactive
 
     private let builtins: [(NoisePreset, String, String)] = [
         (.brown, "Brown", "Deep, low-end rumble"),
@@ -84,7 +85,7 @@ struct PresetsView: View {
                     Button("Save") { savePreset() }
                     Button("Cancel", role: .cancel) {}
                 }
-                .toolbar { EditButton() }
+                .environment(\.editMode, $editMode)
             }
         }
     }
@@ -102,7 +103,11 @@ struct PresetsView: View {
                 .font(DockType.font(18, .semibold))
                 .foregroundStyle(DockColor.textPrimary)
             Spacer()
-            Color.clear.frame(width: 18, height: 18)
+            Button(editMode == .inactive ? "Edit" : "Done") {
+                editMode = editMode == .inactive ? .active : .inactive
+            }
+            .font(DockType.font(14, .medium))
+            .foregroundStyle(DockColor.accent)
         }
         .padding(DockSpacing.xl)
     }

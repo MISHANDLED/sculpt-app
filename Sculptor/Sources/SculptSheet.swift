@@ -1,0 +1,136 @@
+import SwiftUI
+import SwiftData
+import AudioEngine
+import DesignSystem
+
+struct SculptSheet: View {
+    @ObservedObject var vm: PlaybackViewModel
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
+
+    @State private var showingSave = false
+    @State private var newName = ""
+
+    var body: some View {
+        ZStack {
+            DockColor.background.ignoresSafeArea()
+
+            VStack(spacing: DockSpacing.xl) {
+                header
+
+                DockCard {
+                    HStack(alignment: .bottom, spacing: DockSpacing.xs) {
+                        ForEach(0..<8, id: \.self) { i in
+                            VStack(spacing: DockSpacing.sm) {
+                                BandSlider(
+                                    value: Binding(
+                                        get: { vm.gains[i] },
+                                        set: { vm.setGain(band: i, dB: $0) }
+                                    ),
+                                    range: -24...12
+                                )
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 200)
+                                Text(freqLabel(vm.frequencies[i]))
+                                    .font(DockType.font(10, .medium))
+                                    .foregroundStyle(DockColor.textTertiary)
+                                    .fixedSize()
+                            }
+                        }
+                    }
+                }
+
+                PresetChipsRow(vm: vm)
+
+                saveButton
+
+                if let err = vm.errorText {
+                    Text(err).font(DockType.font(12)).foregroundStyle(.red)
+                }
+
+                Spacer()
+            }
+            .padding(DockSpacing.xl)
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Sub-views
+
+    private var header: some View {
+        HStack {
+            Text("Sculpt")
+                .font(DockType.font(24, .semibold))
+                .foregroundStyle(DockColor.textPrimary)
+            Spacer()
+            Button(action: { vm.reset() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.counterclockwise")
+                    Text("Reset")
+                        .font(DockType.font(14, .medium))
+                }
+                .foregroundStyle(DockColor.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(DockColor.surface1)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(DockColor.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var saveButton: some View {
+        Button {
+            newName = ""
+            showingSave = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                Text("Save as preset")
+            }
+            .font(DockType.font(16, .medium))
+            .foregroundStyle(DockColor.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        DockColor.accent.opacity(0.6),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6])
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .alert("Save preset", isPresented: $showingSave) {
+            TextField("Name", text: $newName)
+            Button("Save") { savePreset() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func freqLabel(_ f: Float) -> String {
+        f >= 1000 ? "\(Int(f / 1000))k" : "\(Int(f))"
+    }
+
+    private func savePreset() {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "Custom" : trimmed
+        let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
+        context.insert(CustomPreset(name: name, gains: vm.gains, sortIndex: nextIndex))
+        dismiss()
+    }
+}
+
+#Preview {
+    Color.black
+        .ignoresSafeArea()
+        .sheet(isPresented: .constant(true)) {
+            SculptSheet(vm: PlaybackViewModel())
+                .modelContainer(for: CustomPreset.self, inMemory: true)
+        }
+}

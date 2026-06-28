@@ -30,7 +30,7 @@ struct RootTabView: View {
             HomeView(vm: vm, onOpenSculpt: { selection = .sculpt }, onOpenPresets: { selection = .presets }, onOpenTimer: {})
                 .tabItem { Label(AppTab.nowPlaying.title, systemImage: AppTab.nowPlaying.systemImage) }
                 .tag(AppTab.nowPlaying)
-            SculptView(vm: vm)
+            Color.clear // SculptSheet is now a modal; tab replaced in Task 7
                 .tabItem { Label(AppTab.sculpt.title, systemImage: AppTab.sculpt.systemImage) }
                 .tag(AppTab.sculpt)
             PresetsView(vm: vm)

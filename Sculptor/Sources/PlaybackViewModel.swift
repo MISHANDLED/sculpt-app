@@ -19,9 +19,13 @@ final class PlaybackViewModel: ObservableObject {
     /// UI-coordination flag: the custom preset (by id) that should enter inline rename.
     /// Set by SculptSheet's Save to hand off to PresetsView; cleared once consumed.
     @Published var presetToRename: UUID?
+    @Published private(set) var sleepMinutes: Int?
+    @Published private(set) var sleepRemaining: TimeInterval?
 
     let frequencies: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
     private let engine: NoiseEngine
+    private var sleepDeadline: Date?
+    private var sleepTask: Task<Void, Never>?
 
     init(engine: NoiseEngine = NoiseEngine()) {
         self.engine = engine
@@ -52,12 +56,18 @@ final class PlaybackViewModel: ObservableObject {
 
     func togglePlay() {
         if isPlaying {
-            engine.stop()
-            scopeSamples = []
+            stopPlayback()
+            cancelSleepTimer()
         } else {
             do { try engine.start() }
             catch { errorText = error.localizedDescription }
+            isPlaying = engine.isPlaying
         }
+    }
+
+    private func stopPlayback() {
+        engine.stop()
+        scopeSamples = []
         isPlaying = engine.isPlaying
     }
 
@@ -92,6 +102,40 @@ final class PlaybackViewModel: ObservableObject {
         }
         selection = .none
         isEdited = false
+    }
+
+    func startSleepTimer(minutes: Int) {
+        sleepTask?.cancel()
+        sleepMinutes = minutes
+        sleepDeadline = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        sleepRemaining = TimeInterval(minutes * 60)
+        sleepTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { break }
+                self?._sleepTick()
+            }
+        }
+    }
+
+    func cancelSleepTimer() {
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepDeadline = nil
+        sleepMinutes = nil
+        sleepRemaining = nil
+    }
+
+    /// One countdown step. Test seam: pass an explicit `now`.
+    func _sleepTick(now: Date = Date()) {
+        guard let deadline = sleepDeadline else { return }
+        let remaining = deadline.timeIntervalSince(now)
+        if remaining <= 0 {
+            stopPlayback()
+            cancelSleepTimer()
+        } else {
+            sleepRemaining = remaining
+        }
     }
 
     func _ingestScopeSamples(_ window: [Float]) {

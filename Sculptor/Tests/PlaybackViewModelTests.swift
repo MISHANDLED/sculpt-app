@@ -92,4 +92,48 @@ import Foundation
         vm._ingestScopeSamples([1, 2, 3])
         #expect(vm.scopeSamples == [])
     }
+
+    @Test func startSleepTimerSetsMinutesAndRemaining() {
+        let vm = PlaybackViewModel()
+        vm.startSleepTimer(minutes: 30)
+        #expect(vm.sleepMinutes == 30)
+        let remaining = vm.sleepRemaining ?? 0
+        #expect(remaining > 30 * 60 - 1 && remaining <= 30 * 60)
+        vm.cancelSleepTimer()   // stop the tick loop
+    }
+
+    @Test func cancelSleepTimerClearsState() {
+        let vm = PlaybackViewModel()
+        vm.startSleepTimer(minutes: 15)
+        vm.cancelSleepTimer()
+        #expect(vm.sleepMinutes == nil)
+        #expect(vm.sleepRemaining == nil)
+    }
+
+    @Test func sleepTickBeforeDeadlineUpdatesRemaining() {
+        let vm = PlaybackViewModel()
+        vm.startSleepTimer(minutes: 30)
+        vm._sleepTick(now: Date().addingTimeInterval(60))  // 1 minute elapsed
+        let remaining = vm.sleepRemaining ?? 0
+        #expect(remaining > 28 * 60 && remaining < 30 * 60)
+        #expect(vm.sleepMinutes == 30)
+        vm.cancelSleepTimer()
+    }
+
+    @Test func sleepTickPastDeadlineStopsAndClears() {
+        let vm = PlaybackViewModel()
+        vm.startSleepTimer(minutes: 30)
+        vm._sleepTick(now: Date().addingTimeInterval(31 * 60))  // past deadline
+        #expect(vm.sleepRemaining == nil)
+        #expect(vm.sleepMinutes == nil)
+        #expect(vm.isPlaying == false)
+    }
+
+    @Test func startSleepTimerTwiceReplacesDuration() {
+        let vm = PlaybackViewModel()
+        vm.startSleepTimer(minutes: 15)
+        vm.startSleepTimer(minutes: 45)
+        #expect(vm.sleepMinutes == 45)
+        vm.cancelSleepTimer()
+    }
 }

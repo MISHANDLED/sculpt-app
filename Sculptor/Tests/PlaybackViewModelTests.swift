@@ -77,6 +77,16 @@ import Foundation
         #expect(vm.presetDisplayName == "Custom")
     }
 
+    @Test func presetToRenameSetAndClear() {
+        let vm = PlaybackViewModel()
+        #expect(vm.presetToRename == nil)
+        let id = UUID()
+        vm.presetToRename = id
+        #expect(vm.presetToRename == id)
+        vm.presetToRename = nil
+        #expect(vm.presetToRename == nil)
+    }
+
     @Test func ingestScopeSamplesIgnoredWhenPaused() {
         let vm = PlaybackViewModel()
         vm._ingestScopeSamples([1, 2, 3])

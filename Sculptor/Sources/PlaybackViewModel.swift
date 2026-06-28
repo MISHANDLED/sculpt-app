@@ -16,6 +16,9 @@ final class PlaybackViewModel: ObservableObject {
     @Published private(set) var isEdited = false
     @Published private(set) var scopeSamples: [Float] = []
     @Published var errorText: String?
+    /// UI-coordination flag: the custom preset (by id) that should enter inline rename.
+    /// Set by SculptSheet's Save to hand off to PresetsView; cleared once consumed.
+    @Published var presetToRename: UUID?
 
     let frequencies: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
     private let engine: NoiseEngine

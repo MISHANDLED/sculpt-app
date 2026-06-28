@@ -54,10 +54,11 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     /// Applies an explicit gain set (a saved custom preset) and marks it active.
+    /// Ignores a wrong-length array (e.g. a preset from an older schema) rather
+    /// than trapping or leaving engine/published gains diverged.
     func applyCustom(id: UUID, gains newGains: [Float]) {
-        precondition(newGains.count == frequencies.count,
-                     "applyCustom: expected \(frequencies.count) gains, got \(newGains.count)")
-        for (i, g) in newGains.enumerated() where i < frequencies.count {
+        guard newGains.count == frequencies.count else { return }
+        for (i, g) in newGains.enumerated() {
             engine.setGain(band: i, dB: g)
         }
         gains = newGains

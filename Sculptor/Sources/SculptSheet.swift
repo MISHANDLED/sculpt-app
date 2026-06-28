@@ -9,8 +9,6 @@ struct SculptSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
 
-    @State private var showingSave = false
-    @State private var newName = ""
 
     var body: some View {
         ZStack {
@@ -84,8 +82,7 @@ struct SculptSheet: View {
 
     private var saveButton: some View {
         Button {
-            newName = ""
-            showingSave = true
+            savePreset()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
@@ -104,11 +101,6 @@ struct SculptSheet: View {
             )
         }
         .buttonStyle(.plain)
-        .alert("Save preset", isPresented: $showingSave) {
-            TextField("Name", text: $newName)
-            Button("Save") { savePreset() }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
     // MARK: - Helpers
@@ -118,10 +110,10 @@ struct SculptSheet: View {
     }
 
     private func savePreset() {
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = trimmed.isEmpty ? "Custom" : trimmed
         let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
-        context.insert(CustomPreset(name: name, gains: vm.gains, sortIndex: nextIndex))
+        let preset = CustomPreset(name: "Custom", gains: vm.gains, sortIndex: nextIndex)
+        context.insert(preset)
+        vm.presetToRename = preset.id
         dismiss()
     }
 }

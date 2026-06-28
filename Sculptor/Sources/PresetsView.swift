@@ -20,54 +20,67 @@ struct PresetsView: View {
     ]
 
     var body: some View {
-        ZStack {
-            DockColor.background.ignoresSafeArea()
-            List {
-                Section {
-                    ForEach(builtins, id: \.0) { preset, title, subtitle in
-                        PresetRow(title: title, subtitle: subtitle, gains: preset.gains,
-                                  isActive: vm.selection == .builtin(preset))
-                            .listRowBackground(DockColor.surface1)
-                            .onTapGesture { vm.select(preset) }
-                    }
-                }
-
-                Section("Your presets") {
-                    if customPresets.isEmpty {
-                        Text("No custom presets yet")
-                            .font(DockType.font(12))
-                            .foregroundStyle(DockColor.textTertiary)
-                            .listRowBackground(DockColor.surface1)
-                    } else {
-                        ForEach(customPresets) { preset in
-                            PresetRow(title: preset.name,
-                                      subtitle: "Custom · \(bandsRaisedCount(preset.gains)) bands raised",
-                                      gains: preset.gains,
-                                      isActive: vm.selection == .custom(preset.id))
+        NavigationStack {
+            ZStack {
+                DockColor.background.ignoresSafeArea()
+                List {
+                    Section {
+                        ForEach(builtins, id: \.0) { preset, title, subtitle in
+                            PresetRow(title: title, subtitle: subtitle, gains: preset.gains,
+                                      isActive: vm.selection == .builtin(preset))
                                 .listRowBackground(DockColor.surface1)
-                                .onTapGesture { vm.applyCustom(id: preset.id, gains: preset.gains) }
+                                .onTapGesture { vm.select(preset) }
                         }
                     }
-                }
-                Section {
-                    Button {
-                        newName = ""
-                        showingSave = true
-                    } label: {
-                        Label("Save current as preset", systemImage: "plus")
-                            .font(DockType.font(16, .medium))
-                            .foregroundStyle(DockColor.accent)
+
+                    Section("Your presets") {
+                        if customPresets.isEmpty {
+                            Text("No custom presets yet")
+                                .font(DockType.font(12))
+                                .foregroundStyle(DockColor.textTertiary)
+                                .listRowBackground(DockColor.surface1)
+                        } else {
+                            ForEach(customPresets) { preset in
+                                PresetRow(title: preset.name,
+                                          subtitle: "Custom · \(bandsRaisedCount(preset.gains)) bands raised",
+                                          gains: preset.gains,
+                                          isActive: vm.selection == .custom(preset.id))
+                                    .listRowBackground(DockColor.surface1)
+                                    .onTapGesture { vm.applyCustom(id: preset.id, gains: preset.gains) }
+                            }
+                            .onMove { indices, newOffset in
+                                var items = customPresets
+                                items.move(fromOffsets: indices, toOffset: newOffset)
+                                for (i, p) in items.enumerated() { p.sortIndex = i }
+                            }
+                            .onDelete { offsets in
+                                for i in offsets { context.delete(customPresets[i]) }
+                            }
+                        }
                     }
-                    .listRowBackground(DockColor.surface1)
+                    Section {
+                        Button {
+                            newName = ""
+                            showingSave = true
+                        } label: {
+                            Label("Save current as preset", systemImage: "plus")
+                                .font(DockType.font(16, .medium))
+                                .foregroundStyle(DockColor.accent)
+                        }
+                        .listRowBackground(DockColor.surface1)
+                    }
                 }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .alert("Save preset", isPresented: $showingSave) {
+                    TextField("Name", text: $newName)
+                    Button("Save") { savePreset() }
+                    Button("Cancel", role: .cancel) {}
+                }
+                .toolbar { EditButton() }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .alert("Save preset", isPresented: $showingSave) {
-                TextField("Name", text: $newName)
-                Button("Save") { savePreset() }
-                Button("Cancel", role: .cancel) {}
-            }
+            .navigationTitle("Presets")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 

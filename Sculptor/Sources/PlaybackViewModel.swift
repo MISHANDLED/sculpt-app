@@ -131,8 +131,8 @@ final class PlaybackViewModel: ObservableObject {
         guard let deadline = sleepDeadline else { return }
         let remaining = deadline.timeIntervalSince(now)
         if remaining <= 0 {
-            stopPlayback()
             cancelSleepTimer()
+            stopPlayback()
         } else {
             sleepRemaining = remaining
         }

@@ -67,11 +67,13 @@ struct HomeView: View {
 
                 Menu {
                     Button { vm.cancelSleepTimer() } label: {
-                        Label("Off", systemImage: vm.sleepMinutes == nil ? "checkmark" : "")
+                        if vm.sleepMinutes == nil { Label("Off", systemImage: "checkmark") }
+                        else { Text("Off") }
                     }
                     ForEach([15, 30, 45, 60], id: \.self) { mins in
                         Button { vm.startSleepTimer(minutes: mins) } label: {
-                            Label("\(mins) minutes", systemImage: vm.sleepMinutes == mins ? "checkmark" : "")
+                            if vm.sleepMinutes == mins { Label("\(mins) minutes", systemImage: "checkmark") }
+                            else { Text("\(mins) minutes") }
                         }
                     }
                 } label: {

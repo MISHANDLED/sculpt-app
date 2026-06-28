@@ -8,6 +8,9 @@ struct PresetsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
 
+    @State private var showingSave = false
+    @State private var newName = ""
+
     private let builtins: [(NoisePreset, String, String)] = [
         (.brown, "Brown", "Deep, low-end rumble"),
         (.pink, "Pink", "Balanced, natural tilt"),
@@ -46,10 +49,33 @@ struct PresetsView: View {
                         }
                     }
                 }
+                Section {
+                    Button {
+                        newName = ""
+                        showingSave = true
+                    } label: {
+                        Label("Save current as preset", systemImage: "plus")
+                            .font(DockType.font(16, .medium))
+                            .foregroundStyle(DockColor.accent)
+                    }
+                    .listRowBackground(DockColor.surface1)
+                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .alert("Save preset", isPresented: $showingSave) {
+                TextField("Name", text: $newName)
+                Button("Save") { savePreset() }
+                Button("Cancel", role: .cancel) {}
+            }
         }
+    }
+
+    private func savePreset() {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "Custom" : trimmed
+        let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
+        context.insert(CustomPreset(name: name, gains: vm.gains, sortIndex: nextIndex))
     }
 }
 

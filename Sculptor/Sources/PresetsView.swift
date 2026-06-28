@@ -6,6 +6,7 @@ import DesignSystem
 struct PresetsView: View {
     @ObservedObject var vm: PlaybackViewModel
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
 
     @State private var showingSave = false
@@ -20,16 +21,19 @@ struct PresetsView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                DockColor.background.ignoresSafeArea()
+        ZStack {
+            DockColor.background.ignoresSafeArea()
+            VStack(spacing: 0) {
+                navHeader
                 List {
                     Section {
                         ForEach(builtins, id: \.0) { preset, title, subtitle in
-                            PresetRow(title: title, subtitle: subtitle, gains: preset.gains,
-                                      isActive: vm.selection == .builtin(preset))
-                                .listRowBackground(DockColor.surface1)
-                                .onTapGesture { vm.select(preset) }
+                            PresetRow(
+                                title: title, subtitle: subtitle, gains: preset.gains,
+                                isActive: !vm.isEdited && vm.selection == .builtin(preset)
+                            )
+                            .listRowBackground(DockColor.surface1)
+                            .onTapGesture { vm.select(preset) }
                         }
                     }
 
@@ -41,12 +45,14 @@ struct PresetsView: View {
                                 .listRowBackground(DockColor.surface1)
                         } else {
                             ForEach(customPresets) { preset in
-                                PresetRow(title: preset.name,
-                                          subtitle: "Custom · \(bandsRaisedCount(preset.gains)) bands raised",
-                                          gains: preset.gains,
-                                          isActive: vm.selection == .custom(preset.id))
-                                    .listRowBackground(DockColor.surface1)
-                                    .onTapGesture { vm.applyCustom(id: preset.id, gains: preset.gains) }
+                                PresetRow(
+                                    title: preset.name,
+                                    subtitle: "Custom · \(bandsRaisedCount(preset.gains)) bands raised",
+                                    gains: preset.gains,
+                                    isActive: !vm.isEdited && vm.selection == .custom(preset.id)
+                                )
+                                .listRowBackground(DockColor.surface1)
+                                .onTapGesture { vm.applyCustom(id: preset.id, gains: preset.gains) }
                             }
                             .onMove { indices, newOffset in
                                 var items = customPresets
@@ -58,6 +64,7 @@ struct PresetsView: View {
                             }
                         }
                     }
+
                     Section {
                         Button {
                             newName = ""
@@ -79,9 +86,25 @@ struct PresetsView: View {
                 }
                 .toolbar { EditButton() }
             }
-            .navigationTitle("Presets")
-            .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    private var navHeader: some View {
+        HStack {
+            Button(action: { dismiss() }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(DockColor.textPrimary)
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Text("Presets")
+                .font(DockType.font(18, .semibold))
+                .foregroundStyle(DockColor.textPrimary)
+            Spacer()
+            Color.clear.frame(width: 18, height: 18)
+        }
+        .padding(DockSpacing.xl)
     }
 
     private func savePreset() {

@@ -5,7 +5,7 @@ import SwiftData
 struct SculptorApp: App {
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            RootView()
         }
         .modelContainer(for: CustomPreset.self)
     }

@@ -95,6 +95,7 @@ struct PresetsView: View {
         }
         .onAppear { consumePendingRename() }
         .onChange(of: vm.presetToRename) { _, _ in consumePendingRename() }
+        .onChange(of: customPresets.count) { _, _ in consumePendingRename() }
     }
 
     private var navHeader: some View {
@@ -146,10 +147,9 @@ struct PresetsView: View {
 
     private func consumePendingRename() {
         guard let id = vm.presetToRename else { return }
-        if let preset = customPresets.first(where: { $0.id == id }) {
-            renameText = preset.name
-            renamingID = id
-        }
+        guard let preset = customPresets.first(where: { $0.id == id }) else { return }
+        renameText = preset.name
+        renamingID = id
         vm.presetToRename = nil
     }
 }

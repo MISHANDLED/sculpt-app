@@ -5,15 +5,20 @@ import Foundation
 
 @MainActor
 @Suite struct PlaybackViewModelTests {
+    private func freshDefaults() -> UserDefaults {
+        let suite = "test-\(UUID().uuidString)"
+        return UserDefaults(suiteName: suite)!
+    }
+
     @Test func selectPresetSetsBuiltinSelection() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.select(.pink)
         #expect(vm.gains == NoisePreset.pink.gains)
         #expect(vm.selection == .builtin(.pink))
     }
 
     @Test func applyCustomSetsCustomSelectionAndGains() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         let id = UUID()
         let g: [Float] = [3, 2, 1, 0, -1, -2, -3, -4]
         vm.applyCustom(id: id, gains: g)
@@ -23,7 +28,7 @@ import Foundation
 
     // UPDATED: setGain now sets isEdited=true and PRESERVES selection
     @Test func draggingABandSetsIsEditedAndPreservesSelection() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.select(.pink)
         vm.setGain(band: 0, dB: 5)
         #expect(vm.selection == .builtin(.pink))   // preserved
@@ -32,7 +37,7 @@ import Foundation
     }
 
     @Test func selectClearsIsEdited() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.setGain(band: 0, dB: 5)
         vm.select(.pink)
         #expect(vm.isEdited == false)
@@ -40,7 +45,7 @@ import Foundation
     }
 
     @Test func applyCustomClearsIsEdited() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.setGain(band: 0, dB: 5)
         let id = UUID()
         vm.applyCustom(id: id, gains: [Float](repeating: 0, count: 8))
@@ -49,7 +54,7 @@ import Foundation
     }
 
     @Test func resetZerosGainsAndClearsState() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.select(.pink)
         vm.setGain(band: 0, dB: 5)
         vm.reset()
@@ -59,7 +64,7 @@ import Foundation
     }
 
     @Test func builtinDisplayName() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.select(.pink)
         #expect(vm.presetDisplayName == "Pink")
         vm.select(.white)
@@ -73,12 +78,12 @@ import Foundation
     }
 
     @Test func noneDisplayName() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         #expect(vm.presetDisplayName == "Custom")
     }
 
     @Test func presetToRenameSetAndClear() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         #expect(vm.presetToRename == nil)
         let id = UUID()
         vm.presetToRename = id
@@ -88,13 +93,13 @@ import Foundation
     }
 
     @Test func ingestScopeSamplesIgnoredWhenPaused() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm._ingestScopeSamples([1, 2, 3])
         #expect(vm.scopeSamples == [])
     }
 
     @Test func startSleepTimerSetsMinutesAndRemaining() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.startSleepTimer(minutes: 30)
         #expect(vm.sleepMinutes == 30)
         let remaining = vm.sleepRemaining ?? 0
@@ -103,7 +108,7 @@ import Foundation
     }
 
     @Test func cancelSleepTimerClearsState() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.startSleepTimer(minutes: 15)
         vm.cancelSleepTimer()
         #expect(vm.sleepMinutes == nil)
@@ -111,7 +116,7 @@ import Foundation
     }
 
     @Test func sleepTickBeforeDeadlineUpdatesRemaining() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.startSleepTimer(minutes: 30)
         vm._sleepTick(now: Date().addingTimeInterval(60))  // 1 minute elapsed
         let remaining = vm.sleepRemaining ?? 0
@@ -121,7 +126,7 @@ import Foundation
     }
 
     @Test func sleepTickPastDeadlineStopsAndClears() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.startSleepTimer(minutes: 30)
         vm._sleepTick(now: Date().addingTimeInterval(31 * 60))  // past deadline
         #expect(vm.sleepRemaining == nil)
@@ -130,10 +135,47 @@ import Foundation
     }
 
     @Test func startSleepTimerTwiceReplacesDuration() {
-        let vm = PlaybackViewModel()
+        let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.startSleepTimer(minutes: 15)
         vm.startSleepTimer(minutes: 45)
         #expect(vm.sleepMinutes == 45)
         vm.cancelSleepTimer()
+    }
+
+    // MARK: - Restore tests (shared suite simulates relaunch)
+
+    @Test func restoresLastBuiltinSelection() {
+        let suite = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
+        let vm1 = PlaybackViewModel(defaults: suite)
+        vm1.select(.pink)
+        let vm2 = PlaybackViewModel(defaults: suite)
+        #expect(vm2.selection == .builtin(.pink))
+        #expect(vm2.gains == NoisePreset.pink.gains)
+    }
+
+    @Test func restoresLastCustomSelection() {
+        let suite = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
+        let vm1 = PlaybackViewModel(defaults: suite)
+        let id = UUID()
+        let g: [Float] = [3, 2, 1, 0, -1, -2, -3, -4]
+        vm1.applyCustom(id: id, gains: g)
+        let vm2 = PlaybackViewModel(defaults: suite)
+        #expect(vm2.selection == .custom(id))
+        #expect(vm2.gains == g)
+    }
+
+    @Test func resetClearsPersistedSelection() {
+        let suite = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
+        let vm1 = PlaybackViewModel(defaults: suite)
+        vm1.select(.pink)
+        vm1.reset()
+        let vm2 = PlaybackViewModel(defaults: suite)
+        #expect(vm2.selection == .none)
+        #expect(vm2.gains.allSatisfy { $0 == 0 })
+    }
+
+    @Test func freshDefaultsStartAtNone() {
+        let vm = PlaybackViewModel(defaults: freshDefaults())
+        #expect(vm.selection == .none)
     }
 }

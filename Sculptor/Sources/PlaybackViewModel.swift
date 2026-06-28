@@ -24,11 +24,16 @@ final class PlaybackViewModel: ObservableObject {
 
     let frequencies: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
     private let engine: NoiseEngine
+    private let defaults: UserDefaults
     private var sleepDeadline: Date?
     private var sleepTask: Task<Void, Never>?
 
-    init(engine: NoiseEngine = NoiseEngine()) {
+    private static let kSelection = "sculptor.lastSelection"
+    private static let kGains = "sculptor.lastGains"
+
+    init(engine: NoiseEngine = NoiseEngine(), defaults: UserDefaults = .standard) {
         self.engine = engine
+        self.defaults = defaults
         gains = [Float](repeating: 0, count: 8)
         engine.onPlaybackStateChange = { [weak self] playing in
             Task { @MainActor in self?.isPlaying = playing }
@@ -36,6 +41,7 @@ final class PlaybackViewModel: ObservableObject {
         engine.onScopeSamples = { [weak self] window in
             Task { @MainActor in self?._ingestScopeSamples(window) }
         }
+        restoreLastSelection()
     }
 
     /// Display name for the active selection. Returns "" for .custom — caller resolves via @Query.
@@ -83,6 +89,7 @@ final class PlaybackViewModel: ObservableObject {
         gains = preset.gains
         selection = .builtin(preset)
         isEdited = false
+        persistSelection()
     }
 
     func applyCustom(id: UUID, gains newGains: [Float]) {
@@ -93,6 +100,7 @@ final class PlaybackViewModel: ObservableObject {
         gains = newGains
         selection = .custom(id)
         isEdited = false
+        persistSelection()
     }
 
     func reset() {
@@ -102,6 +110,7 @@ final class PlaybackViewModel: ObservableObject {
         }
         selection = .none
         isEdited = false
+        persistSelection()
     }
 
     func startSleepTimer(minutes: Int) {
@@ -135,6 +144,27 @@ final class PlaybackViewModel: ObservableObject {
             stopPlayback()
         } else {
             sleepRemaining = remaining
+        }
+    }
+
+    private func restoreLastSelection() {
+        guard let token = defaults.string(forKey: Self.kSelection),
+              let sel = parseSelectionToken(token),
+              let stored = defaults.array(forKey: Self.kGains) as? [Double],
+              stored.count == frequencies.count else { return }
+        let restored = stored.map { Float($0) }
+        for (i, g) in restored.enumerated() { engine.setGain(band: i, dB: g) }
+        gains = restored
+        selection = sel
+    }
+
+    private func persistSelection() {
+        if let token = selectionToken(selection) {
+            defaults.set(token, forKey: Self.kSelection)
+            defaults.set(gains.map { Double($0) }, forKey: Self.kGains)
+        } else {
+            defaults.removeObject(forKey: Self.kSelection)
+            defaults.removeObject(forKey: Self.kGains)
         }
     }
 

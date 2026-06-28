@@ -37,6 +37,8 @@ struct HomeView: View {
                     Text(presetName)
                         .font(DockType.font(24, .semibold))
                         .foregroundStyle(DockColor.textPrimary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
                     if vm.isEdited {
                         Text("EDITED")
                             .font(DockType.font(10, .semibold))
@@ -55,6 +57,8 @@ struct HomeView: View {
                         Image(systemName: "bookmark")
                         Text("Presets")
                             .font(DockType.font(14, .medium))
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                     .foregroundStyle(DockColor.textPrimary)
                     .padding(.horizontal, 14)
@@ -81,6 +85,7 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .fixedSize()
         }
         .padding(DockSpacing.xl)
     }

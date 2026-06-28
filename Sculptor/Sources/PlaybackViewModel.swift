@@ -55,6 +55,8 @@ final class PlaybackViewModel: ObservableObject {
 
     /// Applies an explicit gain set (a saved custom preset) and marks it active.
     func applyCustom(id: UUID, gains newGains: [Float]) {
+        precondition(newGains.count == frequencies.count,
+                     "applyCustom: expected \(frequencies.count) gains, got \(newGains.count)")
         for (i, g) in newGains.enumerated() where i < frequencies.count {
             engine.setGain(band: i, dB: g)
         }

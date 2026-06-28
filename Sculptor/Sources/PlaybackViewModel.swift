@@ -1,11 +1,18 @@
 import SwiftUI
 import AudioEngine
+import Foundation
+
+enum PresetSelection: Equatable {
+    case none
+    case builtin(NoisePreset)
+    case custom(UUID)
+}
 
 @MainActor
 final class PlaybackViewModel: ObservableObject {
     @Published var gains: [Float]
     @Published private(set) var isPlaying = false
-    @Published private(set) var selectedPreset: NoisePreset?
+    @Published private(set) var selection: PresetSelection = .none
     @Published private(set) var scopeSamples: [Float] = []
     @Published var errorText: String?
 
@@ -37,13 +44,22 @@ final class PlaybackViewModel: ObservableObject {
     func setGain(band: Int, dB: Float) {
         gains[band] = dB
         engine.setGain(band: band, dB: dB)
-        selectedPreset = nil
+        selection = .none
     }
 
     func select(_ preset: NoisePreset) {
         engine.apply(preset)
         gains = preset.gains
-        selectedPreset = preset
+        selection = .builtin(preset)
+    }
+
+    /// Applies an explicit gain set (a saved custom preset) and marks it active.
+    func applyCustom(id: UUID, gains newGains: [Float]) {
+        for (i, g) in newGains.enumerated() where i < frequencies.count {
+            engine.setGain(band: i, dB: g)
+        }
+        gains = newGains
+        selection = .custom(id)
     }
 
     /// Updates the published scope window. Internal seam for the engine callback and tests.

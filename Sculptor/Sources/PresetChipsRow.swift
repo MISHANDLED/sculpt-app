@@ -16,7 +16,7 @@ struct PresetChipsRow: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: DockSpacing.sm) {
                 ForEach(presets, id: \.0) { preset, title in
-                    PresetChip(title: title, isSelected: vm.selectedPreset == preset) {
+                    PresetChip(title: title, isSelected: vm.selection == .builtin(preset)) {
                         vm.select(preset)
                     }
                 }

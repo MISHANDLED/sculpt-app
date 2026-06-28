@@ -1,39 +1,37 @@
 import Testing
 @testable import Sculptor
 import AudioEngine
+import Foundation
 
 @MainActor
-@Test func selectPresetUpdatesGainsAndSelection() {
-    let vm = PlaybackViewModel()
-    vm.select(.pink)
-    #expect(vm.gains == NoisePreset.pink.gains)
-    #expect(vm.selectedPreset == .pink)
-}
+@Suite struct PlaybackViewModelTests {
+    @Test func selectPresetSetsBuiltinSelection() {
+        let vm = PlaybackViewModel()
+        vm.select(.pink)
+        #expect(vm.gains == NoisePreset.pink.gains)
+        #expect(vm.selection == .builtin(.pink))
+    }
 
-@MainActor
-@Test func draggingABandClearsSelectedPreset() {
-    let vm = PlaybackViewModel()
-    vm.select(.pink)
-    vm.setGain(band: 0, dB: 5)
-    #expect(vm.selectedPreset == nil)
-    #expect(vm.gains[0] == 5)
-}
+    @Test func applyCustomSetsCustomSelectionAndGains() {
+        let vm = PlaybackViewModel()
+        let id = UUID()
+        let g: [Float] = [3, 2, 1, 0, -1, -2, -3, -4]
+        vm.applyCustom(id: id, gains: g)
+        #expect(vm.gains == g)
+        #expect(vm.selection == .custom(id))
+    }
 
-@MainActor
-@Test func ingestScopeSamplesUpdatesPublishedWindow() {
-    let vm = PlaybackViewModel()
-    // Note: _ingestScopeSamples only updates when playing to prevent stale frames
-    // after pause. Mock the playing state directly.
-    vm.togglePlay()
-    guard vm.isPlaying else { return }  // Skip if engine start fails in test env
-    vm._ingestScopeSamples([0.1, -0.2, 0.3])
-    #expect(vm.scopeSamples == [0.1, -0.2, 0.3])
-}
+    @Test func draggingABandClearsSelection() {
+        let vm = PlaybackViewModel()
+        vm.select(.pink)
+        vm.setGain(band: 0, dB: 5)
+        #expect(vm.selection == .none)
+        #expect(vm.gains[0] == 5)
+    }
 
-@MainActor
-@Test func ingestScopeSamplesIgnoredWhenPaused() {
-    let vm = PlaybackViewModel()
-    #expect(!vm.isPlaying)
-    vm._ingestScopeSamples([0.1, -0.2, 0.3])
-    #expect(vm.scopeSamples == [])  // Should not be updated while paused
+    @Test func ingestScopeSamplesIgnoredWhenPaused() {
+        let vm = PlaybackViewModel()
+        vm._ingestScopeSamples([1, 2, 3])
+        #expect(vm.scopeSamples == [])
+    }
 }

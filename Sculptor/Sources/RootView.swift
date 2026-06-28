@@ -13,7 +13,9 @@ struct RootView: View {
             onOpenPresets: { showPresets = true },
             onOpenTimer: {}
         )
-        .sheet(isPresented: $showSculpt) {
+        .sheet(isPresented: $showSculpt, onDismiss: {
+            if vm.presetToRename != nil { showPresets = true }
+        }) {
             SculptSheet(vm: vm)
         }
         .fullScreenCover(isPresented: $showPresets) {

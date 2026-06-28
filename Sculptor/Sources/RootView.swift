@@ -10,8 +10,7 @@ struct RootView: View {
         HomeView(
             vm: vm,
             onOpenSculpt: { showSculpt = true },
-            onOpenPresets: { showPresets = true },
-            onOpenTimer: {}
+            onOpenPresets: { showPresets = true }
         )
         .sheet(isPresented: $showSculpt, onDismiss: {
             if vm.presetToRename != nil { showPresets = true }

@@ -7,7 +7,6 @@ struct HomeView: View {
     @ObservedObject var vm: PlaybackViewModel
     let onOpenSculpt: () -> Void
     let onOpenPresets: () -> Void
-    let onOpenTimer: () -> Void
 
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
 
@@ -66,14 +65,17 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button(action: onOpenTimer) {
-                    Image(systemName: "moon")
-                        .font(.system(size: 16))
-                        .foregroundStyle(DockColor.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(DockColor.surface2)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(DockColor.border, lineWidth: 1))
+                Menu {
+                    Button { vm.cancelSleepTimer() } label: {
+                        Label("Off", systemImage: vm.sleepMinutes == nil ? "checkmark" : "")
+                    }
+                    ForEach([15, 30, 45, 60], id: \.self) { mins in
+                        Button { vm.startSleepTimer(minutes: mins) } label: {
+                            Label("\(mins) minutes", systemImage: vm.sleepMinutes == mins ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    moonLabel
                 }
                 .buttonStyle(.plain)
             }
@@ -118,6 +120,32 @@ struct HomeView: View {
 
     // MARK: - Helpers
 
+    @ViewBuilder private var moonLabel: some View {
+        if let remaining = vm.sleepRemaining {
+            HStack(spacing: 4) {
+                Image(systemName: "moon.fill")
+                Text(formatCountdown(Int(remaining)))
+                    .font(DockType.font(13, .medium))
+                    .monospacedDigit()
+            }
+            .font(.system(size: 16))
+            .foregroundStyle(DockColor.accent)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(DockColor.surface2)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(DockColor.border, lineWidth: 1))
+        } else {
+            Image(systemName: "moon")
+                .font(.system(size: 16))
+                .foregroundStyle(DockColor.textPrimary)
+                .frame(width: 36, height: 36)
+                .background(DockColor.surface2)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(DockColor.border, lineWidth: 1))
+        }
+    }
+
     private var presetName: String {
         switch vm.selection {
         case .custom(let id):
@@ -130,6 +158,6 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView(vm: PlaybackViewModel(), onOpenSculpt: {}, onOpenPresets: {}, onOpenTimer: {})
+    HomeView(vm: PlaybackViewModel(), onOpenSculpt: {}, onOpenPresets: {})
         .modelContainer(for: CustomPreset.self, inMemory: true)
 }

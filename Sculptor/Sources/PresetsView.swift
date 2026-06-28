@@ -141,8 +141,7 @@ struct PresetsView: View {
         let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
         let preset = CustomPreset(name: "Custom", gains: vm.gains, sortIndex: nextIndex)
         context.insert(preset)
-        renameText = preset.name
-        renamingID = preset.id
+        vm.presetToRename = preset.id
     }
 
     private func consumePendingRename() {

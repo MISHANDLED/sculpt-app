@@ -21,12 +21,60 @@ import Foundation
         #expect(vm.selection == .custom(id))
     }
 
-    @Test func draggingABandClearsSelection() {
+    // UPDATED: setGain now sets isEdited=true and PRESERVES selection
+    @Test func draggingABandSetsIsEditedAndPreservesSelection() {
         let vm = PlaybackViewModel()
         vm.select(.pink)
         vm.setGain(band: 0, dB: 5)
-        #expect(vm.selection == .none)
+        #expect(vm.selection == .builtin(.pink))   // preserved
+        #expect(vm.isEdited == true)
         #expect(vm.gains[0] == 5)
+    }
+
+    @Test func selectClearsIsEdited() {
+        let vm = PlaybackViewModel()
+        vm.setGain(band: 0, dB: 5)
+        vm.select(.pink)
+        #expect(vm.isEdited == false)
+        #expect(vm.selection == .builtin(.pink))
+    }
+
+    @Test func applyCustomClearsIsEdited() {
+        let vm = PlaybackViewModel()
+        vm.setGain(band: 0, dB: 5)
+        let id = UUID()
+        vm.applyCustom(id: id, gains: [Float](repeating: 0, count: 8))
+        #expect(vm.isEdited == false)
+        #expect(vm.selection == .custom(id))
+    }
+
+    @Test func resetZerosGainsAndClearsState() {
+        let vm = PlaybackViewModel()
+        vm.select(.pink)
+        vm.setGain(band: 0, dB: 5)
+        vm.reset()
+        #expect(vm.gains.allSatisfy { $0 == 0 })
+        #expect(vm.selection == .none)
+        #expect(vm.isEdited == false)
+    }
+
+    @Test func builtinDisplayName() {
+        let vm = PlaybackViewModel()
+        vm.select(.pink)
+        #expect(vm.presetDisplayName == "Pink")
+        vm.select(.white)
+        #expect(vm.presetDisplayName == "White")
+        vm.select(.brown)
+        #expect(vm.presetDisplayName == "Brown")
+        vm.select(.grey)
+        #expect(vm.presetDisplayName == "Grey")
+        vm.select(.speechBlocker)
+        #expect(vm.presetDisplayName == "Speech blocker")
+    }
+
+    @Test func noneDisplayName() {
+        let vm = PlaybackViewModel()
+        #expect(vm.presetDisplayName == "Custom")
     }
 
     @Test func ingestScopeSamplesIgnoredWhenPaused() {

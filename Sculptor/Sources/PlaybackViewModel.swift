@@ -13,6 +13,7 @@ final class PlaybackViewModel: ObservableObject {
     @Published var gains: [Float]
     @Published private(set) var isPlaying = false
     @Published private(set) var selection: PresetSelection = .none
+    @Published private(set) var isEdited = false
     @Published private(set) var scopeSamples: [Float] = []
     @Published var errorText: String?
 
@@ -30,6 +31,22 @@ final class PlaybackViewModel: ObservableObject {
         }
     }
 
+    /// Display name for the active selection. Returns "" for .custom — caller resolves via @Query.
+    var presetDisplayName: String {
+        switch selection {
+        case .builtin(let p):
+            switch p {
+            case .white:         return "White"
+            case .pink:          return "Pink"
+            case .brown:         return "Brown"
+            case .grey:          return "Grey"
+            case .speechBlocker: return "Speech blocker"
+            }
+        case .custom:   return ""
+        case .none:     return "Custom"
+        }
+    }
+
     func togglePlay() {
         if isPlaying {
             engine.stop()
@@ -44,18 +61,17 @@ final class PlaybackViewModel: ObservableObject {
     func setGain(band: Int, dB: Float) {
         gains[band] = dB
         engine.setGain(band: band, dB: dB)
-        selection = .none
+        isEdited = true
+        // selection preserved — home header keeps showing the preset name with EDITED badge
     }
 
     func select(_ preset: NoisePreset) {
         engine.apply(preset)
         gains = preset.gains
         selection = .builtin(preset)
+        isEdited = false
     }
 
-    /// Applies an explicit gain set (a saved custom preset) and marks it active.
-    /// Ignores a wrong-length array (e.g. a preset from an older schema) rather
-    /// than trapping or leaving engine/published gains diverged.
     func applyCustom(id: UUID, gains newGains: [Float]) {
         guard newGains.count == frequencies.count else { return }
         for (i, g) in newGains.enumerated() {
@@ -63,9 +79,18 @@ final class PlaybackViewModel: ObservableObject {
         }
         gains = newGains
         selection = .custom(id)
+        isEdited = false
     }
 
-    /// Updates the published scope window. Internal seam for the engine callback and tests.
+    func reset() {
+        for i in 0..<frequencies.count {
+            gains[i] = 0
+            engine.setGain(band: i, dB: 0)
+        }
+        selection = .none
+        isEdited = false
+    }
+
     func _ingestScopeSamples(_ window: [Float]) {
         guard isPlaying else { return }
         scopeSamples = window

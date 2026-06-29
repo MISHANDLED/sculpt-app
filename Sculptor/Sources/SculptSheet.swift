@@ -29,7 +29,7 @@ struct SculptSheet: View {
                                     range: -24...12
                                 )
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 200)
+                                .frame(height: 160)
                                 Text(freqLabel(vm.frequencies[i]))
                                     .font(DockType.font(10, .medium))
                                     .foregroundStyle(DockColor.textTertiary)
@@ -39,8 +39,6 @@ struct SculptSheet: View {
                     }
                 }
 
-                PresetChipsRow(vm: vm)
-
                 if vm.isEdited {
                     saveButton
                 }
@@ -48,12 +46,10 @@ struct SculptSheet: View {
                 if let err = vm.errorText {
                     Text(err).font(DockType.font(12)).foregroundStyle(.red)
                 }
-
-                Spacer()
             }
             .padding(DockSpacing.xl)
         }
-        .presentationDetents([.large])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 

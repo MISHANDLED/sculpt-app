@@ -107,10 +107,10 @@ struct HomeView: View {
                     Image(systemName: "slider.vertical.3")
                     Text("Sculpt")
                 }
-                .font(DockType.font(16, .semibold))
+                .font(DockType.font(14, .semibold))
                 .foregroundStyle(DockColor.background)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.horizontal, DockSpacing.lg)
+                .padding(.vertical, DockSpacing.sm)
                 .background(DockColor.accent)
                 .clipShape(Capsule())
             }

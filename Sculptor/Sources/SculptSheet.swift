@@ -41,6 +41,7 @@ struct SculptSheet: View {
 
                 if vm.isEdited {
                     saveButton
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 if let err = vm.errorText {
@@ -48,6 +49,7 @@ struct SculptSheet: View {
                 }
             }
             .padding(DockSpacing.xl)
+            .animation(.easeInOut(duration: 0.22), value: vm.isEdited)
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -76,6 +78,7 @@ struct SculptSheet: View {
                     .overlay(Capsule().stroke(DockColor.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity)
             }
         }
     }

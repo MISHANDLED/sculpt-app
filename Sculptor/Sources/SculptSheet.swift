@@ -41,7 +41,9 @@ struct SculptSheet: View {
 
                 PresetChipsRow(vm: vm)
 
-                saveButton
+                if vm.isEdited {
+                    saveButton
+                }
 
                 if let err = vm.errorText {
                     Text(err).font(DockType.font(12)).foregroundStyle(.red)
@@ -63,20 +65,22 @@ struct SculptSheet: View {
                 .font(DockType.font(24, .semibold))
                 .foregroundStyle(DockColor.textPrimary)
             Spacer()
-            Button(action: { vm.reset() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.counterclockwise")
-                    Text("Reset")
-                        .font(DockType.font(14, .medium))
+            if vm.isEdited {
+                Button(action: { vm.reset() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text("Reset")
+                            .font(DockType.font(14, .medium))
+                    }
+                    .foregroundStyle(DockColor.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(DockColor.surface1)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(DockColor.border, lineWidth: 1))
                 }
-                .foregroundStyle(DockColor.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(DockColor.surface1)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(DockColor.border, lineWidth: 1))
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 

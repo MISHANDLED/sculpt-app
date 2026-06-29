@@ -53,19 +53,13 @@ struct HomeView: View {
             Spacer()
             HStack(spacing: DockSpacing.sm) {
                 Button(action: onOpenPresets) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bookmark")
-                        Text("Presets")
-                            .font(DockType.font(14, .medium))
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                    .foregroundStyle(DockColor.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(DockColor.surface2)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(DockColor.border, lineWidth: 1))
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 16))
+                        .foregroundStyle(DockColor.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(DockColor.surface2)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(DockColor.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
 

@@ -37,6 +37,12 @@ public final class NoiseEngine {
     private var fadeTask: Task<Void, Never>?
     private static let fadeStepInterval: TimeInterval = 0.05
 
+    /// Number of fade steps for a duration. Rounds (0.15/0.05 is 2.999… in
+    /// double math — truncation would drop a step).
+    static func fadeStepCount(for duration: TimeInterval) -> Int {
+        max(1, Int((duration / fadeStepInterval).rounded()))
+    }
+
     /// Remembers the pre-interruption playing state so `.ended` can resume correctly
     /// even though `stop()` clears `isPlaying` during `.began` handling.
     var wasPlayingBeforeInterruption = false
@@ -193,13 +199,13 @@ public final class NoiseEngine {
         fadeTask?.cancel()
         _removeScopeTap()
         isPlaying = false
-        let steps = max(1, Int(fadeDuration / Self.fadeStepInterval))
+        let steps = Self.fadeStepCount(for: fadeDuration)
         let curve = fadeCurve(from: engine.mainMixerNode.outputVolume, steps: steps)
-        fadeTask = Task { [weak self] in
+        fadeTask = Task { @MainActor [weak self] in
             for v in curve {
                 try? await Task.sleep(for: .seconds(Self.fadeStepInterval))
-                if Task.isCancelled { return }
-                self?.engine.mainMixerNode.outputVolume = v
+                guard let self, !Task.isCancelled else { return }
+                self.engine.mainMixerNode.outputVolume = v
             }
             guard let self, !Task.isCancelled else { return }
             self.finishStop(deactivateSession: deactivateSession)

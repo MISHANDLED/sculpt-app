@@ -24,6 +24,12 @@ struct FadeTests {
         #expect(engine.isPlaying == false)
     }
 
+    @Test func stepCountRoundsInsteadOfTruncating() {
+        #expect(NoiseEngine.fadeStepCount(for: 0.15) == 3)
+        #expect(NoiseEngine.fadeStepCount(for: 0.05) == 1)
+        #expect(NoiseEngine.fadeStepCount(for: 0) == 1)
+    }
+
     @Test func stopRestoresMasterVolume() {
         let engine = NoiseEngine()
         engine.masterVolume = 0.6

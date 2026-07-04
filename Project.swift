@@ -47,7 +47,8 @@ let project = Project(
             bundleId: "com.sculptor.app",
             deploymentTargets: .iOS("17.0"),
             infoPlist: .extendingDefault(with: [
-                "UILaunchScreen": [:]
+                "UILaunchScreen": [:],
+                "UIBackgroundModes": ["audio"]
             ]),
             sources: ["Sculptor/Sources/**"],
             dependencies: [

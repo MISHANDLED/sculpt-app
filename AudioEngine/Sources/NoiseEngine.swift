@@ -40,6 +40,9 @@ public final class NoiseEngine {
 
     // MARK: - Testability seams (internal, not for production callers)
 
+    /// Test seam: whether the most recent stop deactivated the audio session.
+    private(set) var _lastStopDeactivatedSession: Bool?
+
     /// Whether the scope tap is currently installed.
     var isScopeTapInstalled: Bool { scopeTapInstalled }
 
@@ -151,11 +154,29 @@ public final class NoiseEngine {
         _installScopeTap()
     }
 
-    public func stop() {
+    /// `deactivateSession: false` is for interruption handling — the system has
+    /// already claimed the session; deactivating it there can throw and is
+    /// against AVAudioSession guidance.
+    public func stop(deactivateSession: Bool = true) {
         _removeScopeTap()
         engine.stop()
-        try? AVAudioSession.sharedInstance().setActive(false)
+        if deactivateSession {
+            try? AVAudioSession.sharedInstance().setActive(false)
+        }
+        _lastStopDeactivatedSession = deactivateSession
         isPlaying = false
+    }
+
+    /// Applies an already-parsed interruption. Internal seam for tests.
+    func _applyInterruption(type: AVAudioSession.InterruptionType,
+                            options: AVAudioSession.InterruptionOptions) {
+        // Capture playing state BEFORE stop() clears isPlaying on .began.
+        if type == .began { wasPlayingBeforeInterruption = isPlaying }
+        switch interruptionAction(type: type, options: options, wasPlaying: wasPlayingBeforeInterruption) {
+        case .pause:  stop(deactivateSession: false)
+        case .resume: try? start()
+        case .none:   break
+        }
     }
 
     @objc private func handleInterruption(_ note: Notification) {
@@ -164,13 +185,7 @@ public final class NoiseEngine {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         let opts = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
             .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
-        // Capture playing state BEFORE stop() clears isPlaying on .began.
-        if type == .began { wasPlayingBeforeInterruption = isPlaying }
-        switch interruptionAction(type: type, options: opts, wasPlaying: wasPlayingBeforeInterruption) {
-        case .pause:  stop()
-        case .resume: try? start()
-        case .none:   break
-        }
+        _applyInterruption(type: type, options: opts)
     }
 
     @objc private func handleRouteChange(_ note: Notification) {

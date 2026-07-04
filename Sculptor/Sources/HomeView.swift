@@ -22,6 +22,9 @@ struct HomeView: View {
                 bottomRail
             }
         }
+        .onChange(of: presetName, initial: true) { _, name in
+            vm.nowPlayingTitle = name
+        }
     }
 
     // MARK: - Sections

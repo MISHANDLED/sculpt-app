@@ -11,7 +11,9 @@ enum PresetSelection: Equatable {
 @MainActor
 final class PlaybackViewModel: ObservableObject {
     @Published var gains: [Float]
-    @Published private(set) var isPlaying = false
+    @Published private(set) var isPlaying = false {
+        didSet { if oldValue != isPlaying { pushNowPlaying() } }
+    }
     @Published private(set) var selection: PresetSelection = .none
     @Published private(set) var isEdited = false
     @Published private(set) var scopeSamples: [Float] = []
@@ -28,11 +30,17 @@ final class PlaybackViewModel: ObservableObject {
         }
     }
 
+    /// Resolved display title (HomeView pushes it — custom preset names need @Query).
+    @Published var nowPlayingTitle = "Custom" {
+        didSet { if oldValue != nowPlayingTitle { pushNowPlaying() } }
+    }
+
     let frequencies: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
     private let engine: NoiseEngine
     private let defaults: UserDefaults
     private var sleepDeadline: Date?
     private var sleepTask: Task<Void, Never>?
+    private var nowPlaying: NowPlayingService?
 
     private static let kSelection = "sculptor.lastSelection"
     private static let kGains = "sculptor.lastGains"
@@ -52,6 +60,25 @@ final class PlaybackViewModel: ObservableObject {
         masterVolume = storedVolume
         engine.masterVolume = storedVolume
         restoreLastSelection()
+
+        nowPlaying = NowPlayingService(
+            onPlay: { [weak self] in
+                Task { @MainActor in
+                    guard let self, !self.isPlaying else { return }
+                    self.togglePlay()
+                }
+            },
+            onPause: { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.isPlaying else { return }
+                    self.togglePlay()
+                }
+            },
+            onToggle: { [weak self] in
+                Task { @MainActor in self?.togglePlay() }
+            }
+        )
+        pushNowPlaying()
     }
 
     /// Display name for the active selection. Returns "" for .custom — caller resolves via @Query.
@@ -184,6 +211,10 @@ final class PlaybackViewModel: ObservableObject {
             defaults.removeObject(forKey: Self.kSelection)
             defaults.removeObject(forKey: Self.kGains)
         }
+    }
+
+    private func pushNowPlaying() {
+        nowPlaying?.update(title: nowPlayingTitle, isPlaying: isPlaying)
     }
 
     func _ingestScopeSamples(_ window: [Float]) {

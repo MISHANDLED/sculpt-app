@@ -2,6 +2,7 @@ import Testing
 @testable import Sculptor
 import AudioEngine
 import Foundation
+import MediaPlayer
 
 @MainActor
 @Suite struct PlaybackViewModelTests {
@@ -186,5 +187,13 @@ import Foundation
         vm.masterVolume = 0.4
         let vm2 = PlaybackViewModel(defaults: d)
         #expect(abs(vm2.masterVolume - 0.4) < 0.001)
+    }
+
+    @Test func nowPlayingTitlePublishesToInfoCenter() {
+        let vm = PlaybackViewModel(defaults: freshDefaults())
+        vm.nowPlayingTitle = "Rain Machine"
+        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        #expect(info?[MPMediaItemPropertyTitle] as? String == "Rain Machine")
+        #expect(info?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 0)
     }
 }

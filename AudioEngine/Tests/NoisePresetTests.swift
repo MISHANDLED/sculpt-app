@@ -51,3 +51,26 @@ import Testing
         for g in p.gains { #expect(g >= -24 && g <= 12) }
     }
 }
+
+@Test func whiteHasNoMakeupGain() {
+    #expect(NoisePreset.white.makeupGain == 0)
+}
+
+@Test func darkerPresetsGetMoreMakeup() {
+    #expect(NoisePreset.brown.makeupGain > NoisePreset.pink.makeupGain)
+    #expect(NoisePreset.pink.makeupGain > 0)
+}
+
+@Test func makeupClampedToTwelveDB() {
+    for p in NoisePreset.allCases {
+        #expect(p.makeupGain.magnitude <= 12)
+    }
+}
+
+@Test func applySetsGlobalGainFromPreset() {
+    let engine = NoiseEngine()
+    engine.apply(.brown)
+    #expect(abs(engine.globalGain - NoisePreset.brown.makeupGain) < 0.01)
+    engine.apply(.white)
+    #expect(engine.globalGain == 0)
+}

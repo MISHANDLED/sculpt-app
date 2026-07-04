@@ -108,6 +108,7 @@ final class PlaybackViewModel: ObservableObject {
         for (i, g) in newGains.enumerated() {
             engine.setGain(band: i, dB: g)
         }
+        engine.setGlobalGain(0)
         gains = newGains
         selection = .custom(id)
         isEdited = false
@@ -119,6 +120,7 @@ final class PlaybackViewModel: ObservableObject {
             gains[i] = 0
             engine.setGain(band: i, dB: 0)
         }
+        engine.setGlobalGain(0)
         selection = .none
         isEdited = false
         persistSelection()
@@ -167,6 +169,11 @@ final class PlaybackViewModel: ObservableObject {
         for (i, g) in restored.enumerated() { engine.setGain(band: i, dB: g) }
         gains = restored
         selection = sel
+        if case .builtin(let preset) = sel {
+            engine.setGlobalGain(preset.makeupGain)
+        } else {
+            engine.setGlobalGain(0)
+        }
     }
 
     private func persistSelection() {

@@ -20,6 +20,16 @@ public enum NoisePreset: CaseIterable {
         }
     }
 
+    /// Makeup gain so presets play at roughly equal loudness: the inverse of the
+    /// mean per-band linear power, clamped ±12 dB. White (flat) → 0. Rough
+    /// energy normalization — no psychoacoustic weighting; tune by ear later.
+    public var makeupGain: Float {
+        let g = gains
+        guard !g.isEmpty else { return 0 }
+        let meanPower = g.map { pow(10, $0 / 10) }.reduce(0, +) / Float(g.count)
+        return min(12, max(-12, -10 * log10(meanPower)))
+    }
+
     /// dB per octave of attenuation for the slope-derived colors.
     private var slopePerOctave: Float {
         switch self {

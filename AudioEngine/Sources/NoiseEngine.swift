@@ -160,10 +160,18 @@ public final class NoiseEngine {
 
     public func gain(band: Int) -> Float { eq.bands[band].gain }
 
+    /// Overall EQ output gain in dB (preset loudness makeup). Clamped ±24.
+    public func setGlobalGain(_ dB: Float) {
+        eq.globalGain = min(24, max(-24, dB))
+    }
+
+    public var globalGain: Float { eq.globalGain }
+
     public func apply(_ preset: NoisePreset) {
         for (i, g) in preset.gains.enumerated() where i < eq.bands.count {
             setGain(band: i, dB: g)
         }
+        setGlobalGain(preset.makeupGain)
     }
 
     public func start() throws {

@@ -178,4 +178,13 @@ import Foundation
         let vm = PlaybackViewModel(defaults: freshDefaults())
         #expect(vm.selection == .none)
     }
+
+    @Test func masterVolumeDefaultsToFullAndPersists() {
+        let d = freshDefaults()
+        let vm = PlaybackViewModel(defaults: d)
+        #expect(vm.masterVolume == 1.0)
+        vm.masterVolume = 0.4
+        let vm2 = PlaybackViewModel(defaults: d)
+        #expect(abs(vm2.masterVolume - 0.4) < 0.001)
+    }
 }

@@ -27,3 +27,13 @@ import Testing
     e.apply(.brown)
     #expect(e.gain(band: 7) < e.gain(band: 0))
 }
+
+@Test func masterVolumeClampsAndDrivesMixer() {
+    let engine = NoiseEngine()
+    engine.masterVolume = 1.5
+    #expect(engine.masterVolume == 1.0)
+    engine.masterVolume = -0.2
+    #expect(engine.masterVolume == 0.0)
+    engine.masterVolume = 0.6
+    #expect(abs(engine._mixerOutputVolume - 0.6) < 0.001)
+}

@@ -38,10 +38,22 @@ public final class NoiseEngine {
     /// even though `stop()` clears `isPlaying` during `.began` handling.
     var wasPlayingBeforeInterruption = false
 
+    /// Master output volume (0…1). Clamped; drives the main mixer. Fades ramp
+    /// the mixer down but always restore to this value.
+    public var masterVolume: Float = 1.0 {
+        didSet {
+            masterVolume = min(1, max(0, masterVolume))   // no re-entry: didSet doesn't retrigger
+            engine.mainMixerNode.outputVolume = masterVolume
+        }
+    }
+
     // MARK: - Testability seams (internal, not for production callers)
 
     /// Test seam: whether the most recent stop deactivated the audio session.
     private(set) var _lastStopDeactivatedSession: Bool?
+
+    /// Test seam: current mixer volume.
+    var _mixerOutputVolume: Float { engine.mainMixerNode.outputVolume }
 
     /// Whether the scope tap is currently installed.
     var isScopeTapInstalled: Bool { scopeTapInstalled }

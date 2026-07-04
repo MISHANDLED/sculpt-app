@@ -21,6 +21,12 @@ final class PlaybackViewModel: ObservableObject {
     @Published var presetToRename: UUID?
     @Published private(set) var sleepMinutes: Int?
     @Published private(set) var sleepRemaining: TimeInterval?
+    @Published var masterVolume: Float = 1.0 {
+        didSet {
+            engine.masterVolume = masterVolume
+            defaults.set(Double(masterVolume), forKey: Self.kVolume)
+        }
+    }
 
     let frequencies: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
     private let engine: NoiseEngine
@@ -30,6 +36,7 @@ final class PlaybackViewModel: ObservableObject {
 
     private static let kSelection = "sculptor.lastSelection"
     private static let kGains = "sculptor.lastGains"
+    private static let kVolume = "sculptor.masterVolume"
 
     init(engine: NoiseEngine = NoiseEngine(), defaults: UserDefaults = .standard) {
         self.engine = engine
@@ -41,6 +48,9 @@ final class PlaybackViewModel: ObservableObject {
         engine.onScopeSamples = { [weak self] window in
             Task { @MainActor in self?._ingestScopeSamples(window) }
         }
+        let storedVolume = (defaults.object(forKey: Self.kVolume) as? Double).map(Float.init) ?? 1.0
+        masterVolume = storedVolume
+        engine.masterVolume = storedVolume
         restoreLastSelection()
     }
 

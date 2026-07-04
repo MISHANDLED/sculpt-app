@@ -90,6 +90,17 @@ struct HomeView: View {
             ScopeVisualizer(samples: vm.scopeSamples)
                 .frame(height: 80)
                 .padding(.horizontal, DockSpacing.xl)
+            HStack(spacing: DockSpacing.sm) {
+                Image(systemName: "speaker.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DockColor.textTertiary)
+                Slider(value: $vm.masterVolume, in: 0...1)
+                    .tint(DockColor.accent)
+                Image(systemName: "speaker.wave.3.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DockColor.textTertiary)
+            }
+            .padding(.horizontal, DockSpacing.xl * 1.5)
             Text(vm.isPlaying ? "Playing · tap to pause" : "Paused")
                 .font(DockType.font(12))
                 .foregroundStyle(DockColor.textTertiary)

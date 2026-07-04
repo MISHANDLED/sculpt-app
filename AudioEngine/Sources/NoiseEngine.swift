@@ -268,7 +268,11 @@ public final class NoiseEngine {
     }
 
     @objc private func handleMediaServicesReset(_ note: Notification) {
-        _recoverFromMediaServicesReset()
+        // Notification can arrive on any thread; graph rebuild must serialize
+        // with the @MainActor fade task and main-thread EQ reads.
+        Task { @MainActor [weak self] in
+            self?._recoverFromMediaServicesReset()
+        }
     }
 
     /// mediaserverd died: every node in the old graph is invalid. Rebuild from

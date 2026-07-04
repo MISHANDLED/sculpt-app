@@ -56,6 +56,20 @@ public final class NoiseEngine {
         }
     }
 
+    /// Whether the oscilloscope tap should run. UI turns this off when the app
+    /// leaves the foreground so we don't downsample buffers all night for a
+    /// scope nobody sees.
+    public var scopeEnabled = true {
+        didSet {
+            guard scopeEnabled != oldValue else { return }
+            if scopeEnabled {
+                if isPlaying { _installScopeTap() }
+            } else {
+                _removeScopeTap()
+            }
+        }
+    }
+
     // MARK: - Testability seams (internal, not for production callers)
 
     /// Test seam: whether the most recent stop deactivated the audio session.
@@ -193,7 +207,7 @@ public final class NoiseEngine {
         try session.setActive(true)
         if !engine.isRunning { try engine.start() }
         isPlaying = true
-        _installScopeTap()
+        if scopeEnabled { _installScopeTap() }
     }
 
     /// `deactivateSession: false` is for interruption handling — the system has

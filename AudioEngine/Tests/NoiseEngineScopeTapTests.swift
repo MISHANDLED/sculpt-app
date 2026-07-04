@@ -11,3 +11,17 @@ import Testing
     engine._removeScopeTap()
     #expect(engine.isScopeTapInstalled == false)
 }
+
+@Test func disablingScopeRemovesInstalledTap() {
+    let engine = NoiseEngine()
+    engine._installScopeTap()
+    engine.scopeEnabled = false
+    #expect(engine.isScopeTapInstalled == false)
+}
+
+@Test func enablingScopeWhileStoppedDoesNotInstall() {
+    let engine = NoiseEngine()
+    engine.scopeEnabled = false
+    engine.scopeEnabled = true
+    #expect(engine.isScopeTapInstalled == false)   // not playing — nothing to observe
+}

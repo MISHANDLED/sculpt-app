@@ -190,4 +190,10 @@ final class PlaybackViewModel: ObservableObject {
         guard isPlaying else { return }
         scopeSamples = window
     }
+
+    /// Scene-phase hook: tear the scope tap down in background, restore in foreground.
+    func setScopeActive(_ active: Bool) {
+        engine.scopeEnabled = active
+        if !active { scopeSamples = [] }
+    }
 }

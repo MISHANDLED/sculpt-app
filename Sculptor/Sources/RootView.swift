@@ -5,6 +5,7 @@ struct RootView: View {
     @StateObject private var vm = PlaybackViewModel()
     @State private var showSculpt = false
     @State private var showPresets = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         HomeView(
@@ -19,6 +20,9 @@ struct RootView: View {
         }
         .fullScreenCover(isPresented: $showPresets) {
             PresetsView(vm: vm)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            vm.setScopeActive(phase == .active)
         }
     }
 }

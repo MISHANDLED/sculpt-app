@@ -4,8 +4,8 @@ import AVFoundation
 /// UI mutates only EQ band gains (audio-unit thread-safe); it never touches
 /// the render callback.
 public final class NoiseEngine {
-    private let engine = AVAudioEngine()
-    private let eq: AVAudioUnitEQ
+    private var engine = AVAudioEngine()
+    private var eq: AVAudioUnitEQ
 
     /// Explicit graph format. Built independently of the output node so the
     /// graph is valid before the audio session is active.
@@ -105,8 +105,8 @@ public final class NoiseEngine {
     private let stateL = UnsafeMutablePointer<NoiseSource>.allocate(capacity: 1)
     private let stateR = UnsafeMutablePointer<NoiseSource>.allocate(capacity: 1)
 
-    public init() {
-        eq = AVAudioUnitEQ(numberOfBands: AudioEngineModule.bandFrequencies.count)
+    private static func makeEQ() -> AVAudioUnitEQ {
+        let eq = AVAudioUnitEQ(numberOfBands: AudioEngineModule.bandFrequencies.count)
         for (i, f) in AudioEngineModule.bandFrequencies.enumerated() {
             let band = eq.bands[i]
             band.filterType = .parametric
@@ -115,33 +115,43 @@ public final class NoiseEngine {
             band.gain = 0
             band.bypass = false
         }
+        return eq
+    }
 
-        stateL.initialize(to: NoiseSource(seed: 0x1234_5678_9ABC_DEF0))
-        stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
-
+    private func buildGraph() {
         let l = stateL, r = stateR
         let sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
             for frame in 0..<Int(frameCount) {
                 for (ch, buffer) in abl.enumerated() {
                     let ptr = buffer.mData!.assumingMemoryBound(to: Float.self)
-                    let sample = (ch == 0) ? l.pointee.next() : r.pointee.next()
-                    ptr[frame] = sample
+                    ptr[frame] = (ch == 0) ? l.pointee.next() : r.pointee.next()
                 }
             }
             return noErr
         }
-
         engine.attach(sourceNode)
         engine.attach(eq)
         engine.connect(sourceNode, to: eq, format: outputFormat)
         engine.connect(eq, to: engine.mainMixerNode, format: outputFormat)
+        engine.mainMixerNode.outputVolume = masterVolume
+    }
+
+    public init() {
+        eq = Self.makeEQ()
+
+        stateL.initialize(to: NoiseSource(seed: 0x1234_5678_9ABC_DEF0))
+        stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
+
+        buildGraph()
 
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(handleInterruption(_:)),
                        name: AVAudioSession.interruptionNotification, object: nil)
         nc.addObserver(self, selector: #selector(handleRouteChange(_:)),
                        name: AVAudioSession.routeChangeNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleMediaServicesReset(_:)),
+                       name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
     }
 
     deinit {
@@ -255,5 +265,27 @@ public final class NoiseEngine {
               let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
         if routeChangeAction(reason: reason) == .pause { stop() }
+    }
+
+    @objc private func handleMediaServicesReset(_ note: Notification) {
+        _recoverFromMediaServicesReset()
+    }
+
+    /// mediaserverd died: every node in the old graph is invalid. Rebuild from
+    /// scratch, restore EQ state, resume if we were playing. Internal for tests.
+    func _recoverFromMediaServicesReset() {
+        let bandGains = eq.bands.map(\.gain)
+        let global = eq.globalGain
+        let wasPlaying = isPlaying
+        fadeTask?.cancel()
+        fadeTask = nil
+        scopeTapInstalled = false          // old tap died with the old graph
+        engine = AVAudioEngine()
+        eq = Self.makeEQ()
+        buildGraph()
+        for (i, g) in bandGains.enumerated() { eq.bands[i].gain = g }
+        eq.globalGain = global
+        isPlaying = false
+        if wasPlaying { try? start() }
     }
 }

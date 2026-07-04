@@ -34,6 +34,9 @@ public final class NoiseEngine {
     private static let scopeBufferSize: AVAudioFrameCount = 4096
     private static let scopePointCount = 128
 
+    private var fadeTask: Task<Void, Never>?
+    private static let fadeStepInterval: TimeInterval = 0.05
+
     /// Remembers the pre-interruption playing state so `.ended` can resume correctly
     /// even though `stop()` clears `isPlaying` during `.began` handling.
     var wasPlayingBeforeInterruption = false
@@ -158,6 +161,9 @@ public final class NoiseEngine {
     }
 
     public func start() throws {
+        fadeTask?.cancel()
+        fadeTask = nil
+        engine.mainMixerNode.outputVolume = masterVolume
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default)
         try session.setActive(true)
@@ -170,13 +176,43 @@ public final class NoiseEngine {
     /// already claimed the session; deactivating it there can throw and is
     /// against AVAudioSession guidance.
     public func stop(deactivateSession: Bool = true) {
+        fadeTask?.cancel()
+        fadeTask = nil
         _removeScopeTap()
+        finishStop(deactivateSession: deactivateSession)
+        isPlaying = false
+    }
+
+    /// Ramps the mixer to silence over `fadeDuration`, then stops the engine.
+    /// `isPlaying` flips false immediately so UI reflects the stop right away.
+    public func stop(fadeDuration: TimeInterval, deactivateSession: Bool = true) {
+        guard fadeDuration > 0, isPlaying else {
+            stop(deactivateSession: deactivateSession)
+            return
+        }
+        fadeTask?.cancel()
+        _removeScopeTap()
+        isPlaying = false
+        let steps = max(1, Int(fadeDuration / Self.fadeStepInterval))
+        let curve = fadeCurve(from: engine.mainMixerNode.outputVolume, steps: steps)
+        fadeTask = Task { [weak self] in
+            for v in curve {
+                try? await Task.sleep(for: .seconds(Self.fadeStepInterval))
+                if Task.isCancelled { return }
+                self?.engine.mainMixerNode.outputVolume = v
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.finishStop(deactivateSession: deactivateSession)
+        }
+    }
+
+    private func finishStop(deactivateSession: Bool) {
         engine.stop()
+        engine.mainMixerNode.outputVolume = masterVolume   // undo any partial fade
         if deactivateSession {
             try? AVAudioSession.sharedInstance().setActive(false)
         }
         _lastStopDeactivatedSession = deactivateSession
-        isPlaying = false
     }
 
     /// Applies an already-parsed interruption. Internal seam for tests.

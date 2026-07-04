@@ -75,14 +75,15 @@ final class PlaybackViewModel: ObservableObject {
             stopPlayback()
             cancelSleepTimer()
         } else {
+            errorText = nil
             do { try engine.start() }
             catch { errorText = error.localizedDescription }
             isPlaying = engine.isPlaying
         }
     }
 
-    private func stopPlayback() {
-        engine.stop()
+    private func stopPlayback(fade: TimeInterval = 0.15) {
+        engine.stop(fadeDuration: fade)
         scopeSamples = []
         isPlaying = engine.isPlaying
     }
@@ -151,7 +152,7 @@ final class PlaybackViewModel: ObservableObject {
         let remaining = deadline.timeIntervalSince(now)
         if remaining <= 0 {
             cancelSleepTimer()
-            stopPlayback()
+            stopPlayback(fade: 10)
         } else {
             sleepRemaining = remaining
         }

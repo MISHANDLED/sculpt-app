@@ -26,6 +26,16 @@ public enum KnobGeometry {
         CGFloat(min(1, max(0, v))) * 0.75
     }
 
+    /// Gesture-level latch: a real drag can never move more than ~0.5 in a
+    /// single frame, so a jump bigger than that means the finger crossed the
+    /// bottom gap and the raw angle wrapped (e.g. 0 -> 1). Hold the previous
+    /// value in that case; tracking resumes once the new value is close again.
+    /// Pass nil for the first sample of a gesture.
+    public static func latchedValue(new: Float, previous: Float?) -> Float {
+        guard let previous else { return new }
+        return abs(new - previous) > 0.5 ? previous : new
+    }
+
     /// Clockwise-from-top angle of a touch point around the knob center,
     /// in -180…180.
     public static func touchAngle(location: CGPoint, center: CGPoint) -> Float {

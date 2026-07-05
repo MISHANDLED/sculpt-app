@@ -76,7 +76,12 @@ public struct VolumeKnob: View {
                 isDragging = true
                 let center = CGPoint(x: size / 2, y: size / 2)
                 let angle = KnobGeometry.touchAngle(location: g.location, center: center)
-                let newValue = KnobGeometry.value(forAngle: angle)
+                let rawValue = KnobGeometry.value(forAngle: angle)
+                // Latch across the bottom gap: never wrap 0 <-> 1 in one frame.
+                let newValue = KnobGeometry.latchedValue(
+                    new: rawValue,
+                    previous: lastValue >= 0 ? lastValue : nil
+                )
                 if (newValue == 0 || newValue == 1), lastValue != newValue {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }

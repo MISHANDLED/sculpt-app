@@ -23,7 +23,7 @@ Reusable SwiftUI view. Pure UI; no audio/session knowledge.
 
 - API: `VolumeKnob(value: Binding<Float>, icon: String, label: String)` — value 0…1.
 - Drawing: `Circle().trim(from:to:)` for track and progress + `shadow` glow + tip dot; rotated so the gap sits at bottom.
-- Gesture: circular drag only. `DragGesture(minimumDistance: 0)`; angle of touch point around center via `atan2`; mapped to sweep fraction; clamped at both ends — crossing the bottom gap never wraps 100→0 or 0→100 (clamp to nearest end while dragging).
+- Gesture: circular drag only. `DragGesture(minimumDistance: 0)`; angle of touch point around center via `atan2`; mapped to sweep fraction; clamped at both ends — crossing the bottom gap never wraps 100→0 or 0→100 (gesture latches to the previous value on any >0.5 single-frame jump; tracking resumes once the finger returns near it).
 - `isDragging` internal state controls icon/number swap.
 - Haptics: light impact when value hits 0.0 or 1.0 during a drag.
 - Geometry math lives in pure static functions (e.g. `KnobGeometry.value(forAngle:)`, `angle(forValue:)`, `trimFraction(forValue:)`) — unit-testable without views.

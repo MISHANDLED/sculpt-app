@@ -37,6 +37,13 @@ public final class NoiseEngine {
     private var fadeTask: Task<Void, Never>?
     private static let fadeStepInterval: TimeInterval = 0.05
 
+    /// True while a fade-out is actively stepping the mixer down. `fadeTask`
+    /// alone isn't a reliable "fade in flight" signal — it isn't nilled on
+    /// natural completion — so this flag is set/cleared explicitly around the
+    /// fade's lifecycle. Internal (not private) so tests can drive it directly
+    /// without spinning up real playback.
+    var isFading = false
+
     /// Number of fade steps for a duration. Rounds (0.15/0.05 is 2.999… in
     /// double math — truncation would drop a step).
     static func fadeStepCount(for duration: TimeInterval) -> Int {
@@ -52,6 +59,11 @@ public final class NoiseEngine {
     public var masterVolume: Float = 1.0 {
         didSet {
             masterVolume = min(1, max(0, masterVolume))   // no re-entry: didSet doesn't retrigger
+            // While a fade-out is in flight, the fade task owns the mixer's
+            // outputVolume; writing here would zipper against its steps. The
+            // fade path (finishStop) always restores the mixer to
+            // masterVolume when it ends, so deferring here is safe.
+            guard !isFading else { return }
             engine.mainMixerNode.outputVolume = masterVolume
         }
     }
@@ -201,6 +213,7 @@ public final class NoiseEngine {
     public func start() throws {
         fadeTask?.cancel()
         fadeTask = nil
+        isFading = false
         engine.mainMixerNode.outputVolume = masterVolume
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default)
@@ -216,6 +229,7 @@ public final class NoiseEngine {
     public func stop(deactivateSession: Bool = true) {
         fadeTask?.cancel()
         fadeTask = nil
+        isFading = false
         _removeScopeTap()
         finishStop(deactivateSession: deactivateSession)
         isPlaying = false
@@ -233,6 +247,7 @@ public final class NoiseEngine {
         isPlaying = false
         let steps = Self.fadeStepCount(for: fadeDuration)
         let curve = fadeCurve(from: engine.mainMixerNode.outputVolume, steps: steps)
+        isFading = true
         fadeTask = Task { @MainActor [weak self] in
             for v in curve {
                 try? await Task.sleep(for: .seconds(Self.fadeStepInterval))
@@ -240,6 +255,7 @@ public final class NoiseEngine {
                 self.engine.mainMixerNode.outputVolume = v
             }
             guard let self, !Task.isCancelled else { return }
+            self.isFading = false
             self.finishStop(deactivateSession: deactivateSession)
         }
     }
@@ -297,6 +313,7 @@ public final class NoiseEngine {
         let wasPlaying = isPlaying
         fadeTask?.cancel()
         fadeTask = nil
+        isFading = false
         scopeTapInstalled = false          // old tap died with the old graph
         engine = AVAudioEngine()
         eq = Self.makeEQ()

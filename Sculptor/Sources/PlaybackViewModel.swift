@@ -118,6 +118,10 @@ final class PlaybackViewModel: ObservableObject {
     func setGain(band: Int, dB: Float) {
         gains[band] = dB
         engine.setGain(band: band, dB: dB)
+        // Recompute makeup from the live gains, not whatever preset was last
+        // applied — otherwise sculpting a band up leaves a stale (too-hot)
+        // makeup gain in place and can clip.
+        engine.setGlobalGain(NoisePreset.makeupGain(for: gains))
         isEdited = true
         // selection preserved — home header keeps showing the preset name with EDITED badge
     }
@@ -135,6 +139,10 @@ final class PlaybackViewModel: ObservableObject {
         for (i, g) in newGains.enumerated() {
             engine.setGain(band: i, dB: g)
         }
+        // Custom presets have no canonical loudness reference — the user set
+        // these gains by ear at globalGain 0, so re-normalizing here would
+        // change what they saved. (A later setGain edit will still recompute
+        // live makeup, same as for builtins.)
         engine.setGlobalGain(0)
         gains = newGains
         selection = .custom(id)
@@ -196,8 +204,12 @@ final class PlaybackViewModel: ObservableObject {
         for (i, g) in restored.enumerated() { engine.setGain(band: i, dB: g) }
         gains = restored
         selection = sel
-        if case .builtin(let preset) = sel {
-            engine.setGlobalGain(preset.makeupGain)
+        // Makeup is computed from the gains actually being restored (which may
+        // be user-edited), not the preset's canonical table — an unedited
+        // restore yields the same gains as the preset, so this is equivalent
+        // in that case and correct in the edited case.
+        if case .builtin = sel {
+            engine.setGlobalGain(NoisePreset.makeupGain(for: restored))
         } else {
             engine.setGlobalGain(0)
         }

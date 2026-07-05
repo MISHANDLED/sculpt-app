@@ -23,10 +23,15 @@ public enum NoisePreset: CaseIterable {
     /// Makeup gain so presets play at roughly equal loudness: the inverse of the
     /// mean per-band linear power, clamped ±12 dB. White (flat) → 0. Rough
     /// energy normalization — no psychoacoustic weighting; tune by ear later.
-    public var makeupGain: Float {
-        let g = gains
-        guard !g.isEmpty else { return 0 }
-        let meanPower = g.map { pow(10, $0 / 10) }.reduce(0, +) / Float(g.count)
+    public var makeupGain: Float { Self.makeupGain(for: gains) }
+
+    /// Energy-based makeup gain for an arbitrary set of band gains, using the
+    /// same formula/clamp as `makeupGain`. Lets callers recompute loudness
+    /// normalization for live (possibly user-edited) gains rather than a
+    /// preset's canonical table.
+    public static func makeupGain(for gains: [Float]) -> Float {
+        guard !gains.isEmpty else { return 0 }
+        let meanPower = gains.map { pow(10, $0 / 10) }.reduce(0, +) / Float(gains.count)
         return min(12, max(-12, -10 * log10(meanPower)))
     }
 

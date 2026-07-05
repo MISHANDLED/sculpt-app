@@ -189,6 +189,31 @@ import MediaPlayer
         #expect(abs(vm2.masterVolume - 0.4) < 0.001)
     }
 
+    // MARK: - Makeup gain stays live with edits (Finding 1)
+
+    @Test func setGainRecomputesMakeupFromLiveGainsNotStalePreset() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        vm.select(.brown)
+        let staleMakeup = engine.globalGain
+        vm.setGain(band: 0, dB: 12)   // sculpt the low band hot
+        let expected = NoisePreset.makeupGain(for: vm.gains)
+        #expect(abs(engine.globalGain - expected) < 0.01)
+        #expect(abs(engine.globalGain - staleMakeup) > 0.01)   // must have moved off the preset's canonical makeup
+    }
+
+    @Test func restoreLastSelectionComputesMakeupFromStoredGainsNotPreset() {
+        let suite = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
+        suite.set("builtin:brown", forKey: "sculptor.lastSelection")
+        let editedGains: [Double] = [12, 0, 0, 0, 0, 0, 0, 0]   // not brown's canonical gains
+        suite.set(editedGains, forKey: "sculptor.lastGains")
+        let engine = NoiseEngine()
+        _ = PlaybackViewModel(engine: engine, defaults: suite)
+        let expected = NoisePreset.makeupGain(for: editedGains.map(Float.init))
+        #expect(abs(engine.globalGain - expected) < 0.01)
+        #expect(abs(engine.globalGain - NoisePreset.brown.makeupGain) > 0.01)
+    }
+
     @Test func nowPlayingTitlePublishesToInfoCenter() {
         let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.nowPlayingTitle = "Rain Machine"

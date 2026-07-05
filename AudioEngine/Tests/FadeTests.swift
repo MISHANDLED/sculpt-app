@@ -36,4 +36,32 @@ struct FadeTests {
         engine.stop()
         #expect(abs(engine._mixerOutputVolume - 0.6) < 0.001)
     }
+
+    // MARK: - masterVolume vs. in-flight fade (Finding 2)
+
+    @Test func masterVolumeSkipsMixerWriteWhileFading() {
+        let engine = NoiseEngine()
+        engine.masterVolume = 0.8
+        engine.isFading = true
+        engine.masterVolume = 0.3
+        #expect(abs(engine._mixerOutputVolume - 0.8) < 0.001)   // no zipper mid-fade
+        #expect(engine.masterVolume == 0.3)                     // stored value still updates
+    }
+
+    @Test func masterVolumeAppliesAfterFadeEnds() {
+        let engine = NoiseEngine()
+        engine.masterVolume = 0.8
+        engine.isFading = true
+        engine.masterVolume = 0.3
+        engine.isFading = false
+        engine.masterVolume = 0.5
+        #expect(abs(engine._mixerOutputVolume - 0.5) < 0.001)
+    }
+
+    @Test func stopClearsIsFadingFlag() {
+        let engine = NoiseEngine()
+        engine.isFading = true
+        engine.stop()
+        #expect(engine.isFading == false)
+    }
 }

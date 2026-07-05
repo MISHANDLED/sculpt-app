@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import AudioEngine
 
 @Test func whiteIsFlat() {
@@ -73,4 +74,19 @@ import Testing
     #expect(abs(engine.globalGain - NoisePreset.brown.makeupGain) < 0.01)
     engine.apply(.white)
     #expect(engine.globalGain == 0)
+}
+
+@Test func makeupGainForArbitraryGainsMatchesFormula() {
+    let g: [Float] = [8, 0, 0, 0, 0, 0, 0, 0]
+    let meanPower = g.map { pow(10, $0 / 10) }.reduce(0, +) / Float(g.count)
+    let expected = min(12, max(-12, -10 * log10(meanPower)))
+    #expect(abs(NoisePreset.makeupGain(for: g) - expected) < 0.001)
+}
+
+@Test func makeupGainForGainsMatchesPresetProperty() {
+    #expect(NoisePreset.makeupGain(for: NoisePreset.brown.gains) == NoisePreset.brown.makeupGain)
+}
+
+@Test func makeupGainForEmptyGainsIsZero() {
+    #expect(NoisePreset.makeupGain(for: []) == 0)
 }

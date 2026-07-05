@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// Fraction (0...1) of the track that should be filled for `value` within `range`.
-public func bandSliderFillFraction(value: Float, in range: ClosedRange<Float>) -> CGFloat {
-    let clamped = min(range.upperBound, max(range.lowerBound, value))
-    let span = range.upperBound - range.lowerBound
-    guard span > 0 else { return 0 }
-    return CGFloat((clamped - range.lowerBound) / span)
+public enum SliderGeometry {
+    /// Fraction (0...1) of the track that should be filled for `value` within `range`.
+    public static func fillFraction(value: Float, in range: ClosedRange<Float>) -> CGFloat {
+        let clamped = min(range.upperBound, max(range.lowerBound, value))
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        return CGFloat((clamped - range.lowerBound) / span)
+    }
 }
 
 /// Vertical EQ slider: teal fill from the bottom with a glowing knob.
@@ -22,7 +24,7 @@ public struct BandSlider: View {
     public var body: some View {
         GeometryReader { geo in
             let height = geo.size.height
-            let fraction = bandSliderFillFraction(value: value, in: range)
+            let fraction = SliderGeometry.fillFraction(value: value, in: range)
             let knobY = height * (1 - fraction)
 
             ZStack(alignment: .bottom) {

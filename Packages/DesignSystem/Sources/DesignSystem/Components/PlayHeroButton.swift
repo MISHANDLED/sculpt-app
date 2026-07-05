@@ -54,7 +54,7 @@ public struct PlayHeroButton: View {
 
     private var accentDark: Color {
         // #0e7d6c — darker teal for the radial gradient inner-to-outer effect
-        let (r, g, b) = dockRGB(hex: 0x0e7d6c)
+        let (r, g, b) = DockColorHex.rgb(hex: 0x0e7d6c)
         return Color(.sRGB, red: r, green: g, blue: b, opacity: 1)
     }
 }

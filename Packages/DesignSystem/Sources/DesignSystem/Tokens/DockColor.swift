@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// Decodes a 0xRRGGBB integer into sRGB components in 0...1.
-func dockRGB(hex: UInt32) -> (Double, Double, Double) {
-    let r = Double((hex >> 16) & 0xFF) / 255.0
-    let g = Double((hex >> 8) & 0xFF) / 255.0
-    let b = Double(hex & 0xFF) / 255.0
-    return (r, g, b)
+/// Decodes 0xRRGGBB integers into sRGB components in 0...1.
+enum DockColorHex {
+    static func rgb(hex: UInt32) -> (Double, Double, Double) {
+        let r = Double((hex >> 16) & 0xFF) / 255.0
+        let g = Double((hex >> 8) & 0xFF) / 255.0
+        let b = Double(hex & 0xFF) / 255.0
+        return (r, g, b)
+    }
 }
 
 private extension Color {
     init(dockHex hex: UInt32) {
-        let (r, g, b) = dockRGB(hex: hex)
+        let (r, g, b) = DockColorHex.rgb(hex: hex)
         self.init(.sRGB, red: r, green: g, blue: b, opacity: 1)
     }
 }

@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// Height of one mini-EQ bar for `gain` within `range`, clamped to 0...maxHeight.
-public func miniEQBarHeight(gain: Float, range: ClosedRange<Float>, maxHeight: CGFloat) -> CGFloat {
-    let clamped = min(range.upperBound, max(range.lowerBound, gain))
-    let span = range.upperBound - range.lowerBound
-    guard span > 0 else { return 0 }
-    return maxHeight * CGFloat((clamped - range.lowerBound) / span)
+public enum MiniEQGeometry {
+    /// Height of one mini-EQ bar for `gain` within `range`, clamped to 0...maxHeight.
+    public static func barHeight(gain: Float, range: ClosedRange<Float>, maxHeight: CGFloat) -> CGFloat {
+        let clamped = min(range.upperBound, max(range.lowerBound, gain))
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        return maxHeight * CGFloat((clamped - range.lowerBound) / span)
+    }
 }
 
 /// Compact glyph rendering a gain set as tiny teal bars (the preset-row icon).
@@ -28,7 +30,7 @@ public struct MiniEQIcon: View {
                     Capsule()
                         .fill(DockColor.accent)
                         .frame(width: barW,
-                               height: max(1, miniEQBarHeight(gain: gains[i], range: range, maxHeight: maxH)))
+                               height: max(1, MiniEQGeometry.barHeight(gain: gains[i], range: range, maxHeight: maxH)))
                 }
             }
             .frame(maxHeight: .infinity, alignment: .bottom)

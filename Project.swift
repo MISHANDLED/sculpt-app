@@ -2,25 +2,10 @@ import ProjectDescription
 
 let project = Project(
     name: "Sculptor",
+    packages: [
+        .package(path: "Packages/AudioEngine")
+    ],
     targets: [
-        .target(
-            name: "AudioEngine",
-            destinations: .iOS,
-            product: .framework,
-            bundleId: "com.mishandled.sculptor.audioengine",
-            deploymentTargets: .iOS("17.0"),
-            sources: ["AudioEngine/Sources/**"],
-            dependencies: []
-        ),
-        .target(
-            name: "AudioEngineTests",
-            destinations: .iOS,
-            product: .unitTests,
-            bundleId: "com.mishandled.sculptor.audioengine.tests",
-            deploymentTargets: .iOS("17.0"),
-            sources: ["AudioEngine/Tests/**"],
-            dependencies: [.target(name: "AudioEngine")]
-        ),
         .target(
             name: "DesignSystem",
             destinations: .iOS,
@@ -52,7 +37,7 @@ let project = Project(
             ]),
             sources: ["Sculptor/Sources/**"],
             dependencies: [
-                .target(name: "AudioEngine"),
+                .package(product: "AudioEngine"),
                 .target(name: "DesignSystem")
             ]
         ),

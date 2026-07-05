@@ -104,6 +104,14 @@ struct HomeView: View {
                     .foregroundStyle(DockColor.textTertiary)
             }
             .padding(.horizontal, DockSpacing.xl * 1.5)
+            HStack(spacing: DockSpacing.sm) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DockColor.textTertiary)
+                SystemVolumeSlider()
+                    .frame(height: 20)
+            }
+            .padding(.horizontal, DockSpacing.xl * 1.5)
             Text(vm.isPlaying ? "Playing · tap to pause" : "Paused")
                 .font(DockType.font(12))
                 .foregroundStyle(DockColor.textTertiary)

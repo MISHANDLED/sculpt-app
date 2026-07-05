@@ -118,10 +118,18 @@ final class PlaybackViewModel: ObservableObject {
     func setGain(band: Int, dB: Float) {
         gains[band] = dB
         engine.setGain(band: band, dB: dB)
-        // Recompute makeup from the live gains, not whatever preset was last
-        // applied — otherwise sculpting a band up leaves a stale (too-hot)
-        // makeup gain in place and can clip.
-        engine.setGlobalGain(NoisePreset.makeupGain(for: gains))
+        // Builtin selections carry an energy makeup gain, so recompute it from
+        // the live gains — otherwise sculpting a band up leaves a stale
+        // (too-hot) makeup in place and can clip. Custom/none selections live
+        // at globalGain 0 (no canonical loudness reference; user set them by
+        // ear) — recomputing there would turn a sub-dB nudge on a quiet
+        // profile into a clamped +12 dB loudness jump, and would diverge from
+        // restoreLastSelection, which restores them at 0.
+        if case .builtin = selection {
+            engine.setGlobalGain(NoisePreset.makeupGain(for: gains))
+        } else {
+            engine.setGlobalGain(0)
+        }
         isEdited = true
         // selection preserved — home header keeps showing the preset name with EDITED badge
     }

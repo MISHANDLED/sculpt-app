@@ -202,6 +202,24 @@ import MediaPlayer
         #expect(abs(engine.globalGain - staleMakeup) > 0.01)   // must have moved off the preset's canonical makeup
     }
 
+    @Test func setGainOnCustomPresetKeepsZeroMakeup() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        // Deliberately quiet custom preset — recomputing makeup here would clamp to +12.
+        vm.applyCustom(id: UUID(), gains: [Float](repeating: -12, count: 8))
+        #expect(engine.globalGain == 0)
+        vm.setGain(band: 0, dB: -11.5)   // sub-dB nudge must not jump loudness
+        #expect(engine.globalGain == 0)
+    }
+
+    @Test func setGainWithNoSelectionKeepsZeroMakeup() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        vm.reset()
+        vm.setGain(band: 0, dB: -12)
+        #expect(engine.globalGain == 0)
+    }
+
     @Test func restoreLastSelectionComputesMakeupFromStoredGainsNotPreset() {
         let suite = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
         suite.set("builtin:brown", forKey: "sculptor.lastSelection")

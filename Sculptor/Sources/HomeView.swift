@@ -9,6 +9,7 @@ struct HomeView: View {
     let onOpenPresets: () -> Void
 
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
+    @StateObject private var systemVolume = SystemVolume()
 
     var body: some View {
         ZStack {
@@ -93,17 +94,19 @@ struct HomeView: View {
             ScopeVisualizer(samples: vm.scopeSamples)
                 .frame(height: 80)
                 .padding(.horizontal, DockSpacing.xl)
-            HStack(spacing: DockSpacing.sm) {
-                Image(systemName: "speaker.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DockColor.textTertiary)
-                Slider(value: $vm.masterVolume, in: 0...1)
-                    .tint(DockColor.accent)
-                Image(systemName: "speaker.wave.3.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DockColor.textTertiary)
+            HStack(spacing: DockSpacing.xl * 2) {
+                VolumeKnob(value: $vm.masterVolume, icon: "speaker.wave.2.fill", label: "NOISE")
+                VolumeKnob(
+                    value: Binding(
+                        get: { systemVolume.level },
+                        set: { systemVolume.setLevel($0) }
+                    ),
+                    icon: "iphone",
+                    label: "PHONE"
+                )
             }
-            .padding(.horizontal, DockSpacing.xl * 1.5)
+            .padding(.top, DockSpacing.sm)
+            .background(HiddenVolumeHost(volume: systemVolume).frame(width: 1, height: 1))
             Text(vm.isPlaying ? "Playing · tap to pause" : "Paused")
                 .font(DockType.font(12))
                 .foregroundStyle(DockColor.textTertiary)

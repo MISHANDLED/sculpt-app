@@ -49,7 +49,7 @@ struct PresetsView: View {
                             ForEach(customPresets) { preset in
                                 CustomPresetRow(
                                     name: preset.name,
-                                    subtitle: "Custom · \(bandsRaisedCount(preset.gains)) bands raised",
+                                    subtitle: "Custom · \(PresetMetrics.bandsRaisedCount(preset.gains)) bands raised",
                                     gains: preset.gains,
                                     isActive: !vm.isEdited && vm.selection == .custom(preset.id),
                                     isRenaming: renamingID == preset.id,
@@ -128,13 +128,13 @@ struct PresetsView: View {
     }
 
     private func commitRename(_ preset: CustomPreset) {
-        preset.name = sanitizedRename(old: preset.name, new: renameText)
+        preset.name = PresetMetrics.sanitizedRename(old: preset.name, new: renameText)
         renamingID = nil
     }
 
     private func copyPreset(_ preset: CustomPreset) {
         let nextIndex = (customPresets.map(\.sortIndex).max() ?? -1) + 1
-        context.insert(CustomPreset(name: copyName(of: preset.name), gains: preset.gains, sortIndex: nextIndex))
+        context.insert(CustomPreset(name: PresetMetrics.copyName(of: preset.name), gains: preset.gains, sortIndex: nextIndex))
     }
 
     private func saveCurrentAsPreset() {

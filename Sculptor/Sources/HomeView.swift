@@ -142,7 +142,7 @@ struct HomeView: View {
         if let remaining = vm.sleepRemaining {
             HStack(spacing: 4) {
                 Image(systemName: "moon.fill")
-                Text(formatCountdown(Int(remaining)))
+                Text(SleepFormatting.countdown(Int(remaining)))
                     .font(DockType.font(13, .medium))
                     .monospacedDigit()
             }

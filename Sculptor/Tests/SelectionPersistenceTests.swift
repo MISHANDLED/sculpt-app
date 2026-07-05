@@ -6,26 +6,26 @@ import Foundation
 @Suite struct SelectionPersistenceTests {
     @Test func builtinTokenRoundTrips() {
         for p in NoisePreset.allCases {
-            let token = selectionToken(.builtin(p))
+            let token = SelectionPersistence.token(.builtin(p))
             #expect(token != nil)
-            #expect(parseSelectionToken(token!) == .builtin(p))
+            #expect(SelectionPersistence.parse(token!) == .builtin(p))
         }
     }
 
     @Test func customTokenRoundTrips() {
         let id = UUID()
-        let token = selectionToken(.custom(id))
+        let token = SelectionPersistence.token(.custom(id))
         #expect(token != nil)
-        #expect(parseSelectionToken(token!) == .custom(id))
+        #expect(SelectionPersistence.parse(token!) == .custom(id))
     }
 
     @Test func noneHasNoToken() {
-        #expect(selectionToken(.none) == nil)
+        #expect(SelectionPersistence.token(.none) == nil)
     }
 
     @Test func malformedTokenParsesNil() {
-        #expect(parseSelectionToken("garbage") == nil)
-        #expect(parseSelectionToken("builtin:nope") == nil)
-        #expect(parseSelectionToken("custom:not-a-uuid") == nil)
+        #expect(SelectionPersistence.parse("garbage") == nil)
+        #expect(SelectionPersistence.parse("builtin:nope") == nil)
+        #expect(SelectionPersistence.parse("custom:not-a-uuid") == nil)
     }
 }

@@ -205,7 +205,7 @@ final class PlaybackViewModel: ObservableObject {
 
     private func restoreLastSelection() {
         guard let token = defaults.string(forKey: Self.kSelection),
-              let sel = parseSelectionToken(token),
+              let sel = SelectionPersistence.parse(token),
               let stored = defaults.array(forKey: Self.kGains) as? [Double],
               stored.count == frequencies.count else { return }
         let restored = stored.map { Float($0) }
@@ -224,7 +224,7 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private func persistSelection() {
-        if let token = selectionToken(selection) {
+        if let token = SelectionPersistence.token(selection) {
             defaults.set(token, forKey: Self.kSelection)
             defaults.set(gains.map { Double($0) }, forKey: Self.kGains)
         } else {

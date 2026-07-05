@@ -62,7 +62,7 @@ Project.swift                  # Sculptor app + SculptorTests targets only
 |---|---|
 | `downsample(_:to:)` | `Downsample.resample(_:to:)` |
 | `fadeCurve(from:steps:)` | `Fade.curve(from:steps:)` |
-| `interruptionAction(type:options:isPlaying:)` | `AudioSessionPolicy.interruptionAction(type:options:isPlaying:)` |
+| `interruptionAction(type:options:wasPlaying:)` | `AudioSessionPolicy.interruptionAction(type:options:wasPlaying:)` |
 | `routeChangeAction(reason:)` | `AudioSessionPolicy.routeChangeAction(reason:)` |
 | `miniEQBarHeight(gain:range:maxHeight:)` | `MiniEQGeometry.barHeight(gain:range:maxHeight:)` |
 | `scopeY(value:height:)` | `ScopeGeometry.y(value:height:)` |

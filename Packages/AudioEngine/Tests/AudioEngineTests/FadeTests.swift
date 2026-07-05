@@ -5,16 +5,16 @@ import Testing
 struct FadeTests {
 
     @Test func linearRampToExactZero() {
-        #expect(fadeCurve(from: 1, steps: 4) == [0.75, 0.5, 0.25, 0])
+        #expect(Fade.curve(from: 1, steps: 4) == [0.75, 0.5, 0.25, 0])
     }
 
     @Test func emptyForNonPositiveSteps() {
-        #expect(fadeCurve(from: 1, steps: 0).isEmpty)
-        #expect(fadeCurve(from: 1, steps: -3).isEmpty)
+        #expect(Fade.curve(from: 1, steps: 0).isEmpty)
+        #expect(Fade.curve(from: 1, steps: -3).isEmpty)
     }
 
     @Test func lastElementAlwaysZero() {
-        #expect(fadeCurve(from: 0.6, steps: 7).last == 0)
+        #expect(Fade.curve(from: 0.6, steps: 7).last == 0)
     }
 
     @Test func fadeStopFallsBackToImmediateWhenNotPlaying() {

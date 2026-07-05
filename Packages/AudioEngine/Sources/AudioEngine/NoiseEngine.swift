@@ -101,7 +101,7 @@ public final class NoiseEngine {
             guard let self, let channel = buffer.floatChannelData?[0] else { return }
             let frames = Int(buffer.frameLength)
             let samples = Array(UnsafeBufferPointer(start: channel, count: frames))
-            let window = downsample(samples, to: Self.scopePointCount)
+            let window = Downsample.resample(samples, to: Self.scopePointCount)
             DispatchQueue.main.async { [weak self] in self?.onScopeSamples?(window) }
         }
         scopeTapInstalled = true
@@ -123,7 +123,7 @@ public final class NoiseEngine {
     func _resumeDecisionForEndedInterruption(
         options: AVAudioSession.InterruptionOptions
     ) -> Bool {
-        interruptionAction(type: .ended, options: options, wasPlaying: wasPlayingBeforeInterruption) == .resume
+        AudioSessionPolicy.interruptionAction(type: .ended, options: options, wasPlaying: wasPlayingBeforeInterruption) == .resume
     }
 
     // Per-channel PRNG state, allocated once. Pointers are captured by the
@@ -246,7 +246,7 @@ public final class NoiseEngine {
         _removeScopeTap()
         isPlaying = false
         let steps = Self.fadeStepCount(for: fadeDuration)
-        let curve = fadeCurve(from: engine.mainMixerNode.outputVolume, steps: steps)
+        let curve = Fade.curve(from: engine.mainMixerNode.outputVolume, steps: steps)
         isFading = true
         fadeTask = Task { @MainActor [weak self] in
             for v in curve {
@@ -274,7 +274,7 @@ public final class NoiseEngine {
                             options: AVAudioSession.InterruptionOptions) {
         // Capture playing state BEFORE stop() clears isPlaying on .began.
         if type == .began { wasPlayingBeforeInterruption = isPlaying }
-        switch interruptionAction(type: type, options: options, wasPlaying: wasPlayingBeforeInterruption) {
+        switch AudioSessionPolicy.interruptionAction(type: type, options: options, wasPlaying: wasPlayingBeforeInterruption) {
         case .pause:  stop(deactivateSession: false)
         case .resume: try? start()
         case .none:   break
@@ -294,7 +294,7 @@ public final class NoiseEngine {
         guard let info = note.userInfo,
               let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
-        if routeChangeAction(reason: reason) == .pause { stop() }
+        if AudioSessionPolicy.routeChangeAction(reason: reason) == .pause { stop() }
     }
 
     @objc private func handleMediaServicesReset(_ note: Notification) {

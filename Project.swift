@@ -7,7 +7,7 @@ let project = Project(
             name: "AudioEngine",
             destinations: .iOS,
             product: .framework,
-            bundleId: "com.sculptor.audioengine",
+            bundleId: "com.mishandled.sculptor.audioengine",
             deploymentTargets: .iOS("17.0"),
             sources: ["AudioEngine/Sources/**"],
             dependencies: []
@@ -16,7 +16,7 @@ let project = Project(
             name: "AudioEngineTests",
             destinations: .iOS,
             product: .unitTests,
-            bundleId: "com.sculptor.audioengine.tests",
+            bundleId: "com.mishandled.sculptor.audioengine.tests",
             deploymentTargets: .iOS("17.0"),
             sources: ["AudioEngine/Tests/**"],
             dependencies: [.target(name: "AudioEngine")]
@@ -25,7 +25,7 @@ let project = Project(
             name: "DesignSystem",
             destinations: .iOS,
             product: .framework,
-            bundleId: "com.sculptor.designsystem",
+            bundleId: "com.mishandled.sculptor.designsystem",
             deploymentTargets: .iOS("17.0"),
             sources: ["DesignSystem/Sources/**"],
             resources: ["DesignSystem/Resources/**"],
@@ -35,7 +35,7 @@ let project = Project(
             name: "DesignSystemTests",
             destinations: .iOS,
             product: .unitTests,
-            bundleId: "com.sculptor.designsystem.tests",
+            bundleId: "com.mishandled.sculptor.designsystem.tests",
             deploymentTargets: .iOS("17.0"),
             sources: ["DesignSystem/Tests/**"],
             dependencies: [.target(name: "DesignSystem")]
@@ -44,7 +44,7 @@ let project = Project(
             name: "Sculptor",
             destinations: .iOS,
             product: .app,
-            bundleId: "com.sculptor.app",
+            bundleId: "com.mishandled.sculptor",
             deploymentTargets: .iOS("17.0"),
             infoPlist: .extendingDefault(with: [
                 "UILaunchScreen": [:],
@@ -60,7 +60,7 @@ let project = Project(
             name: "SculptorTests",
             destinations: .iOS,
             product: .unitTests,
-            bundleId: "com.sculptor.app.tests",
+            bundleId: "com.mishandled.sculptor.tests",
             deploymentTargets: .iOS("17.0"),
             sources: ["Sculptor/Tests/**"],
             dependencies: [.target(name: "Sculptor")]

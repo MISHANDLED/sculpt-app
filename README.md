@@ -47,7 +47,7 @@ Packages/
   DesignSystem/             SPM package: Dock design tokens + components + Lexend fonts
 Sculptor/                   App target: SwiftUI views, PlaybackViewModel, SwiftData presets
 Scripts/test-all.sh         Full test suite runner
-sculptor_design/            Design source of truth (see the Sculptor.dc.html header)
+docs/sculptor_design/       Design source of truth (see the Sculptor.dc.html header)
 docs/superpowers/           Dated specs and implementation plans
 ```
 

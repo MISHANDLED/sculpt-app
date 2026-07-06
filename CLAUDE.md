@@ -62,5 +62,5 @@ Three modules, strict dependency direction: `Sculptor (app) → Packages/AudioEn
 - Structure changes (new files, targets, resources): edit `Project.swift` or the relevant `Packages/*/Package.swift`, then `tuist generate`. Never hand-edit generated `.xcworkspace`/`Derived/`.
 - Package manifests: swift-tools-version 6.0, `platforms: [.iOS(.v17)]`, `swiftLanguageModes: [.v5]`.
 - Trunk-based: commit directly on `master`, no remote, no feature branches. Commit identity: `git -c user.name='Sculptor' -c user.email='dev@sculptor.local' commit ...`
-- Design source of truth: the descriptive header inside `sculptor_design/Sculptor.dc.html` (~line 33) — NOT the screenshots, and NOT `Controls Explorations.dc.html`/`tabbars.png` (those are explorations; a 3-tab UI built from them was wrong and got reworked). Read the header before changing navigation/IA.
+- Design source of truth: the descriptive header inside `docs/sculptor_design/Sculptor.dc.html` (~line 33) — NOT the screenshots, and NOT `Controls Explorations.dc.html`/`tabbars.png` (those are explorations; a 3-tab UI built from them was wrong and got reworked). Read the header before changing navigation/IA.
 - Specs in `docs/superpowers/specs/`, plans in `docs/superpowers/plans/` (dated files); progress ledger at `.superpowers/sdd/progress.md` (git-ignored).

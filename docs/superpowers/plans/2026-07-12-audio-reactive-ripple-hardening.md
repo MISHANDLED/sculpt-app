@@ -4,7 +4,7 @@
 
 **Goal:** Remove the confirmed real-time ownership violation, bound spectrum delivery to the newest frame, eliminate main-thread audio-session negotiation, and leave media-reset recovery paused until explicit user action.
 
-**Architecture:** AVAudioNode tap entry moves from Swift to a non-ARC Objective-C bridge that owns the analyzer for the complete lifetime of the installed block and forwards only a raw pointer, sample pointer, count, and C function pointer. Analyzer results enter a lock-protected newest-only delivery gate that schedules at most one main-actor job and preserves the analysis timestamp. AVAudioSession configuration and activation run through one serialized background coordinator whose command generations prevent stale activate/deactivate operations from winning; NoiseEngine keeps graph mutation on MainActor and PlaybackViewModel owns the cancellable UI request.
+**Architecture:** AVAudioNode tap entry moves from Swift to a non-ARC Objective-C bridge that owns only the submission-storage owner for the complete lifetime of the installed block and forwards a raw pointer, sample pointer, count, and C function pointer. The analyzer remains independently owned so tap removal can be followed by immediate analyzer shutdown and deinitialization even when AVFAudio defers copied-block disposal. Analyzer results enter a lock-protected newest-only delivery gate that schedules at most one main-actor job and preserves the analysis timestamp. AVAudioSession configuration and activation run through one serialized background coordinator whose command generations prevent stale activate/deactivate operations from winning; NoiseEngine keeps graph mutation on MainActor and PlaybackViewModel owns the cancellable UI request.
 
 **Tech Stack:** Swift 5 language mode, Swift 6 package manifest, Objective-C without ARC, C11 atomics, AVFAudio/AVFoundation, Dispatch, Swift Testing, Tuist, xcodebuild, arm64 object-code audits.
 
@@ -12,7 +12,7 @@
 
 - Deployment floor remains iOS 17.0.
 - Add no remote dependency.
-- The AVAudio tap callback may perform bounded raw-memory reads/copies, scalar work, and lock-free atomics only: no Swift entry with Objective-C arguments, ARC ownership change, heap allocation, lock, semaphore, `Task`, dispatch/wakeup, or blocking wait.
+- The AVAudio tap callback may perform bounded raw-memory reads/copies, scalar work, and lock-free atomics only. The required MRC bridge may invoke only the two non-owning `AVAudioPCMBuffer` getters specified below, then enter Swift solely through the raw C ABI `(void *, const float *, intptr_t)` submission function. No Swift bridge may accept Objective-C arguments, and no callback-chain symbol may perform ARC ownership changes, heap allocation, locking, semaphore operations, `Task`, dispatch/wakeup, or a blocking wait.
 - Post-EQ capture remains on the EQ output and preserves exactly eight semantic bands plus RMS and peak.
 - Backpressure is newest-only at both the audio-window mailbox and the main-actor delivery boundary; historical work must not accumulate.
 - MainActor continues to own AVAudioEngine graph, playback, fade, analyzer, tap, and published UI mutation.
@@ -40,7 +40,7 @@
 
 - Consumes: `SpectrumSubmission.context` and its capture-free `@convention(c)` submit function.
 - Produces: `rt_audio_node_install_spectrum_tap(...)` with raw node, submit, and lifetime contexts.
-- Produces: a tap block that retains the analyzer only when the block is copied and releases it only when the block is disposed.
+- Produces: a tap block that retains the submission-storage owner only when the block is copied and releases it only when the block is disposed.
 - Preserves: `NoiseEngine._removeSpectrumTap()` removes the tap before analyzer shutdown.
 
 - [ ] **Step 1: Add the failing outer-boundary audit**
@@ -235,7 +235,7 @@ rt_audio_node_install_spectrum_tap(
 )
 ```
 
-The extra retained analyzer owns `SpectrumMailbox` until AVAudioNode disposes the tap block. Analyzer shutdown remains idempotent and occurs after tap removal.
+The extra retained submission owner keeps `SpectrumMailbox` storage valid until AVAudioNode disposes the tap block. Analyzer shutdown remains idempotent, occurs after tap removal, and does not wait for copied-block disposal.
 
 - [ ] **Step 5: Add lifetime assertions and run GREEN**
 
@@ -487,9 +487,13 @@ Create deterministic injected operations and tests for:
 @Test func queuedActivationSupersededBeforeExecutionNeverTouchesSession() async
 @Test func systemManagedInterruptionSupersedesPendingActivation() async
 @Test func cancelingCurrentActivationSchedulesCleanup() async
+@Test func cancellationBeforeActivationBeginsNeverRegistersActiveIntent() async
+@Test func systemManagedLateActivationNeverExplicitlyDeactivates() async
+@Test func staleActivationFailureBecomesCancellationError() async
+@Test func requestInactiveReturnsWhileSessionOperationIsBlocked() async
 ```
 
-Each test records thread identity and exact operations. The rapid sequence must end exactly in `.active`; no deactivate may occur after the winning activation.
+Each test records thread identity and exact operations. Cover both a queued obsolete deactivation and a deactivation that has already begun: the rapid sequence must end exactly in `.active`, and no deactivate may occur after the winning activation. Also prove that canceling an older activation after a newer activation exists cannot deactivate the newer one, and distinguish current real failures from stale failures.
 
 Run the new suite.
 
@@ -514,14 +518,17 @@ protocol AudioSessionCoordinating: Sendable {
 
 `AudioSessionCoordinator` must:
 
-- run injected `setCategory(.playback, .default)` and `setActive(Bool)` closures on a dedicated serial `DispatchQueue` shared by live coordinators;
+- expose one process-wide live coordinator because `AVAudioSession` is a singleton; tests may construct isolated coordinators with injected operations;
+- run injected `setCategory(.playback, .default)` and `setActive(Bool)` closures on that coordinator's dedicated serial `DispatchQueue`;
 - allocate a monotonically increasing command ID synchronously under `NSLock`;
+- store the locked desired state as `.active(generation)` or `.inactive(generation, policy)` and keep applied state queue-confined; never hold the lock while an AVAudioSession operation runs;
 - check whether activation is current before category, between category and activation, and after activation;
-- return `CancellationError` for superseded activation;
+- return `CancellationError` for every superseded activation, including a stale operation that throws a real session error;
 - skip an obsolete deactivation when a later activation is current;
-- if an activation finishes after the desired state became inactive, deactivate on the same serial queue before completing cancellation;
+- if an activation finishes after the desired state became `.inactive(.deactivate)`, deactivate on the same serial queue before completing cancellation;
+- if an activation finishes after the desired state became `.inactive(.systemManaged)`, never call `setActive(false)` because the system owns interruption deactivation;
 - never let cancellation of an older activation enqueue a deactivate behind a newer activation;
-- expose `waitUntilIdle()` only for deterministic tests and shutdown verification.
+- expose `waitUntilIdle()` only for deterministic tests and shutdown verification, implemented by asynchronously enqueuing a continuation rather than `queue.sync` from main.
 
 Use live operations:
 
@@ -535,13 +542,27 @@ These closures execute only on the coordinator queue.
 
 - [ ] **Step 3: Make NoiseEngine start asynchronous and generation-safe**
 
-Inject `any AudioSessionCoordinating` through the internal initializer; public initializers use a live coordinator. Add `playbackGeneration` and `isPlaybackRequested`.
+Inject `any AudioSessionCoordinating` through the internal initializer; public initializers use `AudioSessionCoordinator.shared`. Add `playbackGeneration` and public-read `isPlaybackRequested`.
 
 `start()` must:
 
 ```swift
 public func start() async throws {
+    try Task.checkCancellation()
     guard !isPlaying else { return }
+
+    if isFading, engine.isRunning {
+        fadeTask?.cancel()
+        fadeTask = nil
+        isFading = false
+        playbackGeneration &+= 1
+        isPlaybackRequested = true
+        engine.mainMixerNode.outputVolume = masterVolume
+        isPlaying = true
+        if spectrumAnalysisEnabled { _installSpectrumTap() }
+        return
+    }
+
     fadeTask?.cancel()
     fadeTask = nil
     isFading = false
@@ -552,13 +573,22 @@ public func start() async throws {
     do {
         try await audioSessionCoordinator.activate()
     } catch {
-        if generation == playbackGeneration {
+        guard generation == playbackGeneration else {
+            throw CancellationError()
+        }
+        if isPlaybackRequested {
             isPlaybackRequested = false
         }
         throw error
     }
 
-    guard generation == playbackGeneration, isPlaybackRequested else {
+    guard !Task.isCancelled,
+          generation == playbackGeneration,
+          isPlaybackRequested else {
+        if generation == playbackGeneration, isPlaybackRequested {
+            isPlaybackRequested = false
+            audioSessionCoordinator.requestInactive(.deactivate)
+        }
         throw CancellationError()
     }
     do {
@@ -574,11 +604,11 @@ public func start() async throws {
 }
 ```
 
-Both stop paths invalidate `playbackGeneration` and set `isPlaybackRequested = false` before removing the tap/stopping the engine. `finishStop` calls `requestInactive(.deactivate)` after `engine.stop()`, or `.systemManaged` for interruption handling. A start cancels an active fade so an old fade task cannot deactivate a newer session.
+Both stop paths invalidate `playbackGeneration` and set `isPlaybackRequested = false` before removing the tap/stopping the engine. `finishStop` calls `requestInactive(.deactivate)` after `engine.stop()`, or `.systemManaged` for interruption handling. An immediate play during an active fade uses the synchronous fast path above because the graph and session are still active; it restores mixer volume and cancels the old fade so that task can never later stop or deactivate the restarted playback.
 
 - [ ] **Step 4: Update interruption and media-reset policy**
 
-Make `_applyInterruption` async so `.resume` can `try? await start()`. Notification tasks await it. `.began` stops with `.systemManaged`.
+Make `_applyInterruption` async so `.resume` can `try? await start()`. Notification tasks await it. Track an interruption epoch plus a single consumable resume token. `.began` captures `isPlaying || isPlaybackRequested`, preserves an existing token across nested begin notifications, and stops with `.systemManaged`. `.ended` may consume only the matching token once. Explicit stop, route loss, or media reset clears the token so a delayed ended notification cannot restart playback.
 
 On media reset:
 
@@ -586,6 +616,7 @@ On media reset:
 func _recoverFromMediaServicesReset() {
     playbackGeneration &+= 1
     isPlaybackRequested = false
+    // invalidate the interruption epoch and clear all resume intent
     // cancel fade, discard old analyzer without messaging invalid EQ,
     // rebuild graph, restore gain shadows
     isPlaying = false
@@ -593,18 +624,21 @@ func _recoverFromMediaServicesReset() {
 }
 ```
 
-Delete automatic `start()` after reset. Add a test that forces `wasPlaying == true`, recovers, and proves playback remains paused until a later explicit `await start()`.
+Delete automatic `start()` after reset. Add a test that forces prior playback and pending interruption-resume state, recovers, and proves playback remains paused through a later interruption-ended notification until a new explicit `await start()`. Also cover reset racing a blocked activation.
 
 - [ ] **Step 5: Make PlaybackViewModel own the cancellable start request**
 
-Keep `togglePlay()` synchronous for SwiftUI. Store `startTask` and a monotonically increasing request ID. When stopped and not starting, create a main-actor task that awaits `engine.start()`. When playing or starting, cancel the task and call `engine.stop(fadeDuration:)`. Ignore `CancellationError`; publish only the current real error. Remote play/pause guards must treat a pending start as requested playback.
+Keep `togglePlay()` synchronous for SwiftUI. Store `startTask` and a monotonically increasing request ID. When stopped and not starting, create a main-actor task that awaits `engine.start()`. When playing or starting, cancel the task and call `engine.stop(fadeDuration:)`. Ignore `CancellationError`; publish only a real error from the still-current request. Treat `isPlaying || startTask != nil || engine.isPlaybackRequested` as effective playback intent. A second toggle, remote pause, sleep expiry, and every other stop source must cancel and invalidate the pending task before stopping the engine; remote play/pause guards must use effective intent.
 
 Add tests:
 
 ```swift
 @Test func secondToggleWhileStartingCancelsWithoutError() async
+@Test func remotePauseWhileStartingCancelsWithoutError() async
+@Test func sleepExpiryWhileStartingCancelsWithoutError() async
 @Test func staleStartFailureCannotOverwriteNewerState() async
 @Test func activationFailureLeavesRequestedAndPlayingFalse() async
+@Test func immediateRestartDuringFadeKeepsGraphAndSessionActive() async
 ```
 
 - [ ] **Step 6: Run GREEN and negative-warning audit**

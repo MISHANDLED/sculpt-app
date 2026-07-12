@@ -86,9 +86,10 @@ struct RippleAnimationState: Sendable {
         to newInput: RippleAnimationInput,
         at instant: ContinuousClock.Instant
     ) {
-        anchorSpectrum = displayedSpectrum(at: instant)
-        elapsedAtAnchor = elapsedTime(at: instant)
-        anchorInstant = instant
+        let effectiveInstant = max(anchorInstant, instant)
+        anchorSpectrum = displayedSpectrum(at: effectiveInstant)
+        elapsedAtAnchor = elapsedTime(at: effectiveInstant)
+        anchorInstant = effectiveInstant
         input = newInput
     }
 

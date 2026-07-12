@@ -34,6 +34,24 @@ struct RippleAnimationStateTests {
         )
     }
 
+    private func expectEnvelopeAndTime(
+        _ actual: RippleUniforms,
+        equals expected: RippleUniforms,
+        tolerance: Float = 0.000001
+    ) {
+        #expect(abs(actual.bandsLow.x - expected.bandsLow.x) < tolerance)
+        #expect(abs(actual.bandsLow.y - expected.bandsLow.y) < tolerance)
+        #expect(abs(actual.bandsLow.z - expected.bandsLow.z) < tolerance)
+        #expect(abs(actual.bandsLow.w - expected.bandsLow.w) < tolerance)
+        #expect(abs(actual.bandsHigh.x - expected.bandsHigh.x) < tolerance)
+        #expect(abs(actual.bandsHigh.y - expected.bandsHigh.y) < tolerance)
+        #expect(abs(actual.bandsHigh.z - expected.bandsHigh.z) < tolerance)
+        #expect(abs(actual.bandsHigh.w - expected.bandsHigh.w) < tolerance)
+        #expect(abs(actual.rms - expected.rms) < tolerance)
+        #expect(abs(actual.peak - expected.peak) < tolerance)
+        #expect(abs(actual.elapsedTime - expected.elapsedTime) < tolerance)
+    }
+
     @Test func attackUses120MillisecondTimeConstant() {
         let start = clock.now
         var state = RippleAnimationState(at: start)
@@ -95,12 +113,20 @@ struct RippleAnimationStateTests {
         #expect(abs(released.peak - attacked.peak * 0.36787945) < 0.0001)
     }
 
-    @Test func retargetStartsFromCurrentDisplayedValue() {
+    @Test func retargetPreservesEveryEnvelopeChannelAndShaderTime() {
         let start = clock.now
         let retargetTime = start.advanced(by: .milliseconds(60))
+        let bands = SIMD8<Float>(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
         var state = RippleAnimationState(at: start)
         state.retarget(
-            to: input(snapshot: snapshot(1), receivedAt: start),
+            to: input(
+                snapshot: SpectrumSnapshot(
+                    bands: bands,
+                    rms: 0.55,
+                    peak: 0.9
+                ),
+                receivedAt: start
+            ),
             at: start
         )
         let before = state.uniforms(at: retargetTime)
@@ -109,22 +135,86 @@ struct RippleAnimationStateTests {
             at: retargetTime
         )
         let after = state.uniforms(at: retargetTime)
-        #expect(abs(after.rms - before.rms) < 0.000001)
-        #expect(abs(after.bandsLow.x - before.bandsLow.x) < 0.000001)
+        expectEnvelopeAndTime(after, equals: before)
     }
 
-    @Test func staleSpectrumReleasesAfter350Milliseconds() {
+    @Test func stalePhaseRetargetPreservesEnvelopeAndShaderTime() {
         let start = clock.now
-        let staleBoundary = start.advanced(by: .milliseconds(350))
+        let retargetTime = start.advanced(by: .milliseconds(500))
+        let bands = SIMD8<Float>(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+        var state = RippleAnimationState(at: start)
+        state.retarget(
+            to: input(
+                snapshot: SpectrumSnapshot(
+                    bands: bands,
+                    rms: 0.7,
+                    peak: 0.9
+                ),
+                receivedAt: start
+            ),
+            at: start
+        )
+        let before = state.uniforms(at: retargetTime)
+
+        state.retarget(
+            to: input(snapshot: snapshot(0.2), receivedAt: retargetTime),
+            at: retargetTime
+        )
+
+        let after = state.uniforms(at: retargetTime)
+        expectEnvelopeAndTime(after, equals: before)
+    }
+
+    @Test func reversedRetargetKeepsAnchorAndShaderTimeMonotonic() {
+        let start = clock.now
+        let forward = start.advanced(by: .milliseconds(200))
+        let backward = start.advanced(by: .milliseconds(100))
+        let later = start.advanced(by: .milliseconds(300))
         var state = RippleAnimationState(at: start)
         state.retarget(
             to: input(snapshot: snapshot(1), receivedAt: start),
             at: start
         )
+        state.retarget(
+            to: input(snapshot: snapshot(0.8), receivedAt: forward),
+            at: forward
+        )
+        let beforeReverse = state.uniforms(at: forward)
+
+        state.retarget(
+            to: input(snapshot: snapshot(0.2), receivedAt: forward),
+            at: backward
+        )
+
+        let afterReverse = state.uniforms(at: forward)
+        expectEnvelopeAndTime(afterReverse, equals: beforeReverse)
+        #expect(abs(state.uniforms(at: later).elapsedTime - 0.3) < 0.000001)
+    }
+
+    @Test func staleSpectrumReleasesAfter350Milliseconds() {
+        let start = clock.now
+        let immediatelyBefore = start.advanced(by: .milliseconds(349))
+        let staleBoundary = start.advanced(by: .milliseconds(350))
+        let immediatelyAfter = start.advanced(by: .milliseconds(351))
+        var state = RippleAnimationState(at: start)
+        state.retarget(
+            to: input(snapshot: snapshot(1), receivedAt: start),
+            at: start
+        )
+        let before = state.uniforms(at: immediatelyBefore)
         let atBoundary = state.uniforms(at: staleBoundary)
+        let after = state.uniforms(at: immediatelyAfter)
         let released = state.uniforms(
             at: staleBoundary.advanced(by: .milliseconds(450))
         )
+
+        #expect(abs(before.rms - 0.9454334) < 0.00001)
+        #expect(abs(atBoundary.rms - 0.94588625) < 0.00001)
+        #expect(abs(after.rms - 0.9437866) < 0.00001)
+        #expect(abs(after.peak - 0.94211024) < 0.00001)
+        #expect(before.rms < atBoundary.rms)
+        #expect(after.rms < atBoundary.rms)
+        #expect(after.peak < atBoundary.peak)
         #expect(abs(released.rms - atBoundary.rms * 0.36787945) < 0.0001)
     }
 
@@ -166,36 +256,89 @@ struct RippleAnimationStateTests {
         #expect(abs(uniforms.elapsedTime - 0.12) < 0.0001)
     }
 
-    @Test func pausedStatePreservesDriftWithZeroAudio() {
+    @Test func masterVolumeSanitizationDoesNotChangeEnvelopes() {
         let start = clock.now
-        var state = RippleAnimationState(at: start)
-        state.retarget(
+        let sample = SpectrumSnapshot(
+            bands: SIMD8<Float>(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8),
+            rms: 0.6,
+            peak: 0.9
+        )
+        let queryTime = start.advanced(by: .milliseconds(120))
+        var baselineState = RippleAnimationState(at: start)
+        baselineState.retarget(
             to: input(
-                snapshot: snapshot(1),
+                snapshot: sample,
                 receivedAt: start,
-                isPlaying: false
+                masterVolume: 1
             ),
             at: start
         )
-        let uniforms = state.uniforms(
-            at: start.advanced(by: .seconds(1))
-        )
-        #expect(uniforms.bandsLow == .zero)
-        #expect(uniforms.bandsHigh == .zero)
-        #expect(uniforms.rms == 0)
-        #expect(uniforms.peak == 0)
-        #expect(uniforms.audioResponseScale == 1)
-        #expect(abs(uniforms.elapsedTime - 1) < 0.0001)
+        let baseline = baselineState.uniforms(at: queryTime)
+        let cases: [(volume: Float, expected: Float)] = [
+            (-1, 0),
+            (2, 1),
+            (.nan, 0),
+            (.infinity, 0),
+            (-.infinity, 0),
+        ]
+
+        for volumeCase in cases {
+            var state = RippleAnimationState(at: start)
+            state.retarget(
+                to: input(
+                    snapshot: sample,
+                    receivedAt: start,
+                    masterVolume: volumeCase.volume
+                ),
+                at: start
+            )
+            let uniforms = state.uniforms(at: queryTime)
+
+            #expect(uniforms.audioResponseScale == volumeCase.expected)
+            expectEnvelopeAndTime(uniforms, equals: baseline)
+        }
     }
 
-    @Test func inactiveStateFreezesShaderTimeWhileEnvelopeAges() {
+    @Test func pauseFromAudibleStateReleasesAudioAndPreservesDrift() {
         let start = clock.now
-        let inactiveAt = start.advanced(by: .seconds(1))
+        let pauseAt = start.advanced(by: .milliseconds(120))
         var state = RippleAnimationState(at: start)
         state.retarget(
             to: input(snapshot: snapshot(1), receivedAt: start),
             at: start
         )
+        let audible = state.uniforms(at: pauseAt)
+        state.retarget(
+            to: input(snapshot: .zero, receivedAt: nil, isPlaying: false),
+            at: pauseAt
+        )
+        let paused = state.uniforms(at: pauseAt)
+        let peakReleased = state.uniforms(
+            at: pauseAt.advanced(by: .milliseconds(250))
+        )
+        let released = state.uniforms(
+            at: pauseAt.advanced(by: .milliseconds(450))
+        )
+
+        expectEnvelopeAndTime(paused, equals: audible)
+        #expect(abs(released.bandsLow.x - audible.bandsLow.x * 0.36787945) < 0.0001)
+        #expect(abs(released.bandsHigh.w - audible.bandsHigh.w * 0.36787945) < 0.0001)
+        #expect(abs(released.rms - audible.rms * 0.36787945) < 0.0001)
+        #expect(abs(peakReleased.peak - audible.peak * 0.36787945) < 0.0001)
+        #expect(abs(released.elapsedTime - 0.57) < 0.0001)
+        #expect(released.audioResponseScale == 1)
+    }
+
+    @Test func inactiveStateAgesEnvelopeAndReactivationResumesFrozenTime() {
+        let start = clock.now
+        let inactiveAt = start.advanced(by: .milliseconds(120))
+        let reactivateAt = inactiveAt.advanced(by: .milliseconds(450))
+        var state = RippleAnimationState(at: start)
+        state.retarget(
+            to: input(snapshot: snapshot(1), receivedAt: start),
+            at: start
+        )
+        let active = state.uniforms(at: inactiveAt)
         state.retarget(
             to: input(
                 snapshot: .zero,
@@ -204,11 +347,25 @@ struct RippleAnimationStateTests {
             ),
             at: inactiveAt
         )
-        let uniforms = state.uniforms(
-            at: inactiveAt.advanced(by: .seconds(10))
+        let becameInactive = state.uniforms(at: inactiveAt)
+        let aged = state.uniforms(at: reactivateAt)
+
+        expectEnvelopeAndTime(becameInactive, equals: active)
+        #expect(abs(aged.rms - active.rms * 0.36787945) < 0.0001)
+        #expect(abs(aged.elapsedTime - 0.12) < 0.0001)
+
+        state.retarget(
+            to: input(snapshot: snapshot(1), receivedAt: reactivateAt),
+            at: reactivateAt
         )
-        #expect(abs(uniforms.elapsedTime - 1) < 0.0001)
-        #expect(uniforms.rms < 0.0001)
+        let reactivated = state.uniforms(at: reactivateAt)
+        expectEnvelopeAndTime(reactivated, equals: aged)
+
+        let resumed = state.uniforms(
+            at: reactivateAt.advanced(by: .milliseconds(120))
+        )
+        #expect(resumed.rms > reactivated.rms)
+        #expect(abs(resumed.elapsedTime - 0.24) < 0.0001)
     }
 
     @Test func reducedProfilesUseThirtyFPSAndOneNoiseOctave() {

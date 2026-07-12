@@ -50,6 +50,11 @@ struct SpectrumMailboxTests {
         #expect(mailbox.isLockFree)
     }
 
+    @Test func sequenceOrderingHandlesUInt64Rollover() {
+        #expect(SpectrumMailbox.isNewerSequence(0, than: .max))
+        #expect(!SpectrumMailbox.isNewerSequence(.max, than: 0))
+    }
+
     @Test func arbitraryChunksAssembleOneExactWindow() throws {
         let mailbox = try SpectrumMailboxTestSupport.makeMailbox()
         let input = (0..<SpectrumMailbox.sampleCount).map(Float.init)

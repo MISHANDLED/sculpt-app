@@ -7,6 +7,18 @@ struct ClaimedSpectrumFrame: @unchecked Sendable {
     let samples: UnsafeBufferPointer<Float>
 }
 
+private struct SpectrumMailboxProducerControl {
+    let accumulator: UnsafeMutablePointer<Float>
+    let slot0: UnsafeMutablePointer<Float>
+    let slot1: UnsafeMutablePointer<Float>
+    let state0: OpaquePointer
+    let state1: OpaquePointer
+    var accumulatedCount: Int
+    var nextSequence: UInt64
+    var sequence0: UInt64
+    var sequence1: UInt64
+}
+
 final class SpectrumMailbox: @unchecked Sendable {
     static let sampleCount = 4_096
 
@@ -15,17 +27,7 @@ final class SpectrumMailbox: @unchecked Sendable {
     private static let ready: UInt8 = 2
     private static let reading: UInt8 = 3
 
-    private let accumulator: UnsafeMutablePointer<Float>
-    private let slot0: UnsafeMutablePointer<Float>
-    private let slot1: UnsafeMutablePointer<Float>
-    private let state0: OpaquePointer
-    private let state1: OpaquePointer
-
-    // Producer-only fields; AVAudioNode serializes a tap callback per bus.
-    private var accumulatedCount = 0
-    private var nextSequence: UInt64 = 0
-    private var sequence0: UInt64 = 0
-    private var sequence1: UInt64 = 0
+    private let producer: UnsafeMutablePointer<SpectrumMailboxProducerControl>
 
     init?() {
         guard let firstState = rt_atomic_u8_create(Self.free) else {
@@ -45,28 +47,42 @@ final class SpectrumMailbox: @unchecked Sendable {
             return nil
         }
 
-        state0 = firstState
-        state1 = secondState
-        accumulator = .allocate(capacity: Self.sampleCount)
-        slot0 = .allocate(capacity: Self.sampleCount)
-        slot1 = .allocate(capacity: Self.sampleCount)
+        let producer = UnsafeMutablePointer<SpectrumMailboxProducerControl>
+            .allocate(capacity: 1)
+        producer.initialize(
+            to: SpectrumMailboxProducerControl(
+                accumulator: .allocate(capacity: Self.sampleCount),
+                slot0: .allocate(capacity: Self.sampleCount),
+                slot1: .allocate(capacity: Self.sampleCount),
+                state0: firstState,
+                state1: secondState,
+                accumulatedCount: 0,
+                nextSequence: 0,
+                sequence0: 0,
+                sequence1: 0
+            )
+        )
+        self.producer = producer
     }
 
     var opaqueContext: UnsafeMutableRawPointer {
-        Unmanaged.passUnretained(self).toOpaque()
+        UnsafeMutableRawPointer(producer)
     }
 
     var isLockFree: Bool {
-        rt_atomic_u8_is_lock_free(state0)
-            && rt_atomic_u8_is_lock_free(state1)
+        rt_atomic_u8_is_lock_free(producer.pointee.state0)
+            && rt_atomic_u8_is_lock_free(producer.pointee.state1)
     }
 
     deinit {
-        rt_atomic_u8_destroy(state0)
-        rt_atomic_u8_destroy(state1)
-        accumulator.deallocate()
-        slot0.deallocate()
-        slot1.deallocate()
+        let control = producer.pointee
+        rt_atomic_u8_destroy(control.state0)
+        rt_atomic_u8_destroy(control.state1)
+        control.accumulator.deallocate()
+        control.slot0.deallocate()
+        control.slot1.deallocate()
+        producer.deinitialize(count: 1)
+        producer.deallocate()
     }
 
     @discardableResult
@@ -76,10 +92,14 @@ final class SpectrumMailbox: @unchecked Sendable {
         count: Int
     ) -> Bool {
         guard count > 0 else { return false }
-        let mailbox = Unmanaged<SpectrumMailbox>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-        return mailbox.copyAndPublish(samples: samples, count: count)
+        let producer = context.assumingMemoryBound(
+            to: SpectrumMailboxProducerControl.self
+        )
+        return copyAndPublish(
+            producer: producer,
+            samples: samples,
+            count: count
+        )
     }
 
     func claimLatest() -> ClaimedSpectrumFrame? {
@@ -87,32 +107,38 @@ final class SpectrumMailbox: @unchecked Sendable {
         var second: ClaimedSpectrumFrame?
 
         if rt_atomic_u8_compare_exchange_acq_rel(
-            state0,
+            producer.pointee.state0,
             Self.ready,
             Self.reading
         ) {
             first = ClaimedSpectrumFrame(
                 slot: 0,
-                sequence: sequence0,
-                samples: UnsafeBufferPointer(start: slot0, count: Self.sampleCount)
+                sequence: producer.pointee.sequence0,
+                samples: UnsafeBufferPointer(
+                    start: producer.pointee.slot0,
+                    count: Self.sampleCount
+                )
             )
         }
 
         if rt_atomic_u8_compare_exchange_acq_rel(
-            state1,
+            producer.pointee.state1,
             Self.ready,
             Self.reading
         ) {
             second = ClaimedSpectrumFrame(
                 slot: 1,
-                sequence: sequence1,
-                samples: UnsafeBufferPointer(start: slot1, count: Self.sampleCount)
+                sequence: producer.pointee.sequence1,
+                samples: UnsafeBufferPointer(
+                    start: producer.pointee.slot1,
+                    count: Self.sampleCount
+                )
             )
         }
 
         switch (first, second) {
         case let (left?, right?):
-            if left.sequence > right.sequence {
+            if Self.isNewerSequence(left.sequence, than: right.sequence) {
                 release(right)
                 return left
             }
@@ -127,15 +153,20 @@ final class SpectrumMailbox: @unchecked Sendable {
         }
     }
 
+    static func isNewerSequence(_ candidate: UInt64, than reference: UInt64) -> Bool {
+        Int64(bitPattern: candidate &- reference) > 0
+    }
+
     func release(_ frame: ClaimedSpectrumFrame) {
         if frame.slot == 0 {
-            rt_atomic_u8_store_release(state0, Self.free)
+            rt_atomic_u8_store_release(producer.pointee.state0, Self.free)
         } else {
-            rt_atomic_u8_store_release(state1, Self.free)
+            rt_atomic_u8_store_release(producer.pointee.state1, Self.free)
         }
     }
 
-    private func copyAndPublish(
+    private static func copyAndPublish(
+        producer: UnsafeMutablePointer<SpectrumMailboxProducerControl>,
         samples: UnsafePointer<Float>,
         count: Int
     ) -> Bool {
@@ -143,82 +174,89 @@ final class SpectrumMailbox: @unchecked Sendable {
         var published = false
 
         while sourceOffset < count {
+            let accumulatedCount = producer.pointee.accumulatedCount
             let copyCount = min(
                 Self.sampleCount - accumulatedCount,
                 count - sourceOffset
             )
             memcpy(
-                accumulator.advanced(by: accumulatedCount),
+                producer.pointee.accumulator.advanced(by: accumulatedCount),
                 samples.advanced(by: sourceOffset),
                 copyCount * MemoryLayout<Float>.stride
             )
-            accumulatedCount += copyCount
+            producer.pointee.accumulatedCount = accumulatedCount + copyCount
             sourceOffset += copyCount
 
-            if accumulatedCount == Self.sampleCount {
-                published = publishAccumulator() || published
-                accumulatedCount = 0
+            if producer.pointee.accumulatedCount == Self.sampleCount {
+                published = publishAccumulator(producer: producer) || published
+                producer.pointee.accumulatedCount = 0
             }
         }
 
         return published
     }
 
-    private func publishAccumulator() -> Bool {
+    private static func publishAccumulator(
+        producer: UnsafeMutablePointer<SpectrumMailboxProducerControl>
+    ) -> Bool {
         // Overwrite a pending ready frame before taking a free slot.
         if rt_atomic_u8_compare_exchange_acq_rel(
-            state0,
+            producer.pointee.state0,
             Self.ready,
             Self.writing
         ) {
-            finishPublish(to: 0)
+            finishPublish(producer: producer, to: 0)
             return true
         }
         if rt_atomic_u8_compare_exchange_acq_rel(
-            state1,
+            producer.pointee.state1,
             Self.ready,
             Self.writing
         ) {
-            finishPublish(to: 1)
+            finishPublish(producer: producer, to: 1)
             return true
         }
         if rt_atomic_u8_compare_exchange_acq_rel(
-            state0,
+            producer.pointee.state0,
             Self.free,
             Self.writing
         ) {
-            finishPublish(to: 0)
+            finishPublish(producer: producer, to: 0)
             return true
         }
         if rt_atomic_u8_compare_exchange_acq_rel(
-            state1,
+            producer.pointee.state1,
             Self.free,
             Self.writing
         ) {
-            finishPublish(to: 1)
+            finishPublish(producer: producer, to: 1)
             return true
         }
         return false
     }
 
-    private func finishPublish(to slot: Int) {
-        nextSequence &+= 1
+    private static func finishPublish(
+        producer: UnsafeMutablePointer<SpectrumMailboxProducerControl>,
+        to slot: Int
+    ) {
+        let sequence = producer.pointee.nextSequence &+ 1
+        producer.pointee.nextSequence = sequence
         if slot == 0 {
             memcpy(
-                slot0,
-                accumulator,
+                producer.pointee.slot0,
+                producer.pointee.accumulator,
                 Self.sampleCount * MemoryLayout<Float>.stride
             )
-            sequence0 = nextSequence
-            rt_atomic_u8_store_release(state0, Self.ready)
+            producer.pointee.sequence0 = sequence
+            rt_atomic_u8_store_release(producer.pointee.state0, Self.ready)
         } else {
             memcpy(
-                slot1,
-                accumulator,
+                producer.pointee.slot1,
+                producer.pointee.accumulator,
                 Self.sampleCount * MemoryLayout<Float>.stride
             )
-            sequence1 = nextSequence
-            rt_atomic_u8_store_release(state1, Self.ready)
+            producer.pointee.sequence1 = sequence
+            rt_atomic_u8_store_release(producer.pointee.state1, Self.ready)
         }
     }
 }

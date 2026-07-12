@@ -1,15 +1,192 @@
 import Testing
 @testable import Sculptor
-import AudioEngine
+@testable import AudioEngine
 import Combine
 import Foundation
 import MediaPlayer
+
+private enum PlaybackStartTestError: Error {
+    case failed
+}
+
+private final class PlaybackSessionProbe: AudioSessionCoordinating,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var waiters: [CheckedContinuation<Void, Error>] = []
+    private var activationCalls = 0
+    private var policies: [AudioSessionInactivePolicy] = []
+    let activationEntered = DispatchSemaphore(value: 0)
+
+    func activate() async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.withLock {
+                activationCalls += 1
+                waiters.append(continuation)
+            }
+            activationEntered.signal()
+        }
+    }
+
+    func requestInactive(_ policy: AudioSessionInactivePolicy) {
+        lock.withLock { policies.append(policy) }
+    }
+
+    func waitUntilIdle() async {}
+
+    func completeNext(_ result: Result<Void, Error>) {
+        let continuation = lock.withLock { waiters.removeFirst() }
+        continuation.resume(with: result)
+    }
+
+    func activationCount() -> Int {
+        lock.withLock { activationCalls }
+    }
+}
+
+@MainActor
+private final class PlaybackViewModelGraphProbe: @unchecked Sendable {
+    var running = false
+    var startCount = 0
+
+    var hooks: NoiseEnginePlaybackGraphHooks {
+        NoiseEnginePlaybackGraphHooks(
+            isRunning: { [weak self] _ in self?.running == true },
+            start: { [weak self] _ in
+                self?.startCount += 1
+                self?.running = true
+            },
+            stop: { [weak self] _ in self?.running = false }
+        )
+    }
+}
+
+private func waitForPlaybackActivation(
+    _ probe: PlaybackSessionProbe
+) async -> Bool {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global().async {
+            continuation.resume(
+                returning: probe.activationEntered.wait(
+                    timeout: .now() + 2
+                ) == .success
+            )
+        }
+    }
+}
 
 @MainActor
 @Suite struct PlaybackViewModelTests {
     private func freshDefaults() -> UserDefaults {
         let suite = "test-\(UUID().uuidString)"
         return UserDefaults(suiteName: suite)!
+    }
+
+    private func makePendingStartViewModel() -> (
+        PlaybackViewModel,
+        NoiseEngine,
+        PlaybackSessionProbe,
+        PlaybackViewModelGraphProbe
+    ) {
+        let session = PlaybackSessionProbe()
+        let graph = PlaybackViewModelGraphProbe()
+        let engine = NoiseEngine(
+            notificationCenter: NotificationCenter(),
+            audioSessionCoordinator: session,
+            playbackGraphHooks: graph.hooks
+        )
+        let viewModel = PlaybackViewModel(
+            engine: engine,
+            defaults: freshDefaults()
+        )
+        return (viewModel, engine, session, graph)
+    }
+
+    @Test func canceledBeforeFirstExecutionNeverRegistersActiveIntent() async {
+        let (vm, engine, session, _) = makePendingStartViewModel()
+
+        vm.togglePlay()
+        vm.togglePlay()
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(session.activationCount() == 0)
+        #expect(!engine.isPlaybackRequested)
+        #expect(!vm.isPlaying)
+        #expect(vm.errorText == nil)
+    }
+
+    @Test func secondToggleWhileStartingCancelsWithoutError() async {
+        let (vm, engine, session, _) = makePendingStartViewModel()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        vm.togglePlay()
+        session.completeNext(.success(()))
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(!engine.isPlaybackRequested)
+        #expect(!vm.isPlaying)
+        #expect(vm.errorText == nil)
+    }
+
+    @Test func remotePauseWhileStartingCancelsWithoutError() async {
+        let (vm, engine, session, _) = makePendingStartViewModel()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        vm._handleRemotePause()
+        session.completeNext(.success(()))
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(!engine.isPlaybackRequested)
+        #expect(!vm.isPlaying)
+        #expect(vm.errorText == nil)
+    }
+
+    @Test func sleepExpiryWhileStartingCancelsWithoutError() async {
+        let (vm, engine, session, _) = makePendingStartViewModel()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+        vm.startSleepTimer(minutes: 1)
+
+        vm._sleepTick(now: Date().addingTimeInterval(61))
+        session.completeNext(.success(()))
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(!engine.isPlaybackRequested)
+        #expect(!vm.isPlaying)
+        #expect(vm.errorText == nil)
+        #expect(vm.sleepMinutes == nil)
+    }
+
+    @Test func staleStartFailureCannotOverwriteNewerState() async {
+        let (vm, _, session, graph) = makePendingStartViewModel()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+        vm.togglePlay()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        session.completeNext(.failure(PlaybackStartTestError.failed))
+        session.completeNext(.success(()))
+        for _ in 0..<20 where !vm.isPlaying { await Task.yield() }
+
+        #expect(vm.isPlaying)
+        #expect(vm.errorText == nil)
+        #expect(graph.startCount == 1)
+    }
+
+    @Test func currentActivationFailurePublishesErrorAndStaysStopped() async {
+        let (vm, engine, session, _) = makePendingStartViewModel()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        session.completeNext(.failure(PlaybackStartTestError.failed))
+        for _ in 0..<20 where vm.errorText == nil { await Task.yield() }
+
+        #expect(!engine.isPlaybackRequested)
+        #expect(!vm.isPlaying)
+        #expect(vm.errorText != nil)
     }
 
     @Test func selectPresetSetsBuiltinSelection() {

@@ -19,6 +19,18 @@ struct NoiseEngineGraphLifecycleHooks: Sendable {
     )
 }
 
+struct NoiseEnginePlaybackGraphHooks: Sendable {
+    let isRunning: @MainActor @Sendable (AVAudioEngine) -> Bool
+    let start: @MainActor @Sendable (AVAudioEngine) throws -> Void
+    let stop: @MainActor @Sendable (AVAudioEngine) -> Void
+
+    static let live = NoiseEnginePlaybackGraphHooks(
+        isRunning: { $0.isRunning },
+        start: { try $0.start() },
+        stop: { $0.stop() }
+    )
+}
+
 /// Owns the AVAudioEngine graph: white-noise source → 8-band EQ → output.
 /// UI mutates only EQ band gains (audio-unit thread-safe); it never touches
 /// the render callback.
@@ -79,6 +91,8 @@ public final class NoiseEngine {
     )
     private let notificationCenter: NotificationCenter
     private let graphLifecycleHooks: NoiseEngineGraphLifecycleHooks
+    private let playbackGraphHooks: NoiseEnginePlaybackGraphHooks
+    private let audioSessionCoordinator: any AudioSessionCoordinating
 
     private var fadeTask: Task<Void, Never>?
     private static let fadeStepInterval: TimeInterval = 0.05
@@ -96,8 +110,13 @@ public final class NoiseEngine {
         max(1, Int((duration / fadeStepInterval).rounded()))
     }
 
-    /// Remembers the pre-interruption playing state so `.ended` can resume correctly
-    /// even though `stop()` clears `isPlaying` during `.began` handling.
+    private var playbackGeneration: UInt64 = 0
+    public private(set) var isPlaybackRequested = false
+
+    private var interruptionEpoch: UInt64 = 0
+    private var interruptionResumeToken: UInt64?
+
+    /// Compatibility seam for the pure interruption-policy tests.
     var wasPlayingBeforeInterruption = false
 
     /// Master output volume (0…1). Clamped; drives the main mixer. Fades ramp
@@ -277,7 +296,8 @@ public final class NoiseEngine {
                     deliver: deliver
                 )
             },
-            notificationCenter: .default
+            notificationCenter: .default,
+            audioSessionCoordinator: AudioSessionCoordinator.shared
         )
     }
 
@@ -290,7 +310,27 @@ public final class NoiseEngine {
                     deliver: deliver
                 )
             },
-            notificationCenter: notificationCenter
+            notificationCenter: notificationCenter,
+            audioSessionCoordinator: AudioSessionCoordinator.shared
+        )
+    }
+
+    convenience init(
+        notificationCenter: NotificationCenter,
+        audioSessionCoordinator: any AudioSessionCoordinating,
+        playbackGraphHooks: NoiseEnginePlaybackGraphHooks = .live
+    ) {
+        self.init(
+            analyzerFactory: { sampleRate, generation, deliver in
+                SpectrumAnalyzer(
+                    sampleRate: sampleRate,
+                    generation: generation,
+                    deliver: deliver
+                )
+            },
+            notificationCenter: notificationCenter,
+            audioSessionCoordinator: audioSessionCoordinator,
+            playbackGraphHooks: playbackGraphHooks
         )
     }
 
@@ -299,12 +339,17 @@ public final class NoiseEngine {
         notificationCenter: NotificationCenter,
         graphLifecycleHooks: NoiseEngineGraphLifecycleHooks = .none,
         spectrumDeliverySchedule: @escaping SpectrumDeliveryGate.Scheduler =
-            SpectrumDeliveryGate.defaultSchedule
+            SpectrumDeliveryGate.defaultSchedule,
+        audioSessionCoordinator: any AudioSessionCoordinating =
+            AudioSessionCoordinator.shared,
+        playbackGraphHooks: NoiseEnginePlaybackGraphHooks = .live
     ) {
         self.analyzerFactory = analyzerFactory
         self.spectrumDeliverySchedule = spectrumDeliverySchedule
         self.notificationCenter = notificationCenter
         self.graphLifecycleHooks = graphLifecycleHooks
+        self.audioSessionCoordinator = audioSessionCoordinator
+        self.playbackGraphHooks = playbackGraphHooks
         storedEQ = Self.makeEQ()
         stateL.initialize(to: NoiseSource(seed: 0x1234_5678_9ABC_DEF0))
         stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
@@ -338,7 +383,7 @@ public final class NoiseEngine {
         if spectrumTapInstalled { eq.removeTap(onBus: 0) }
         spectrumGeneration &+= 1
         spectrumAnalyzer?.shutdown()
-        engine.stop()
+        playbackGraphHooks.stop(engine)
         notificationCenter.removeObserver(self)
         stateL.deinitialize(count: 1)
         stateL.deallocate()
@@ -374,28 +419,93 @@ public final class NoiseEngine {
         setGlobalGain(preset.makeupGain)
     }
 
-    public func start() throws {
+    public func start() async throws {
+        try await startPlayback(clearingInterruptionResume: true)
+    }
+
+    private func startPlayback(
+        clearingInterruptionResume: Bool
+    ) async throws {
+        try Task.checkCancellation()
+        if clearingInterruptionResume {
+            clearInterruptionResumeIntent()
+        }
+        guard !isPlaying else { return }
+
+        if isFading, playbackGraphHooks.isRunning(engine) {
+            fadeTask?.cancel()
+            fadeTask = nil
+            isFading = false
+            playbackGeneration += 1
+            isPlaybackRequested = true
+            engine.mainMixerNode.outputVolume = masterVolume
+            isPlaying = true
+            if spectrumAnalysisEnabled { _installSpectrumTap() }
+            return
+        }
+
         fadeTask?.cancel()
         fadeTask = nil
         isFading = false
-        engine.mainMixerNode.outputVolume = masterVolume
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .default)
-        try session.setActive(true)
-        if !engine.isRunning { try engine.start() }
-        isPlaying = true
-        if spectrumAnalysisEnabled { _installSpectrumTap() }
+        playbackGeneration += 1
+        let generation = playbackGeneration
+        isPlaybackRequested = true
+
+        do {
+            try await audioSessionCoordinator.activate()
+        } catch {
+            guard generation == playbackGeneration else {
+                throw CancellationError()
+            }
+            isPlaybackRequested = false
+            audioSessionCoordinator.requestInactive(.deactivate)
+            throw error
+        }
+
+        guard !Task.isCancelled,
+              generation == playbackGeneration,
+              isPlaybackRequested else {
+            if generation == playbackGeneration, isPlaybackRequested {
+                isPlaybackRequested = false
+                audioSessionCoordinator.requestInactive(.deactivate)
+            }
+            throw CancellationError()
+        }
+
+        do {
+            engine.mainMixerNode.outputVolume = masterVolume
+            if !playbackGraphHooks.isRunning(engine) {
+                try playbackGraphHooks.start(engine)
+            }
+            isPlaying = true
+            if spectrumAnalysisEnabled { _installSpectrumTap() }
+        } catch {
+            isPlaybackRequested = false
+            audioSessionCoordinator.requestInactive(.deactivate)
+            throw error
+        }
     }
 
     /// `deactivateSession: false` is for interruption handling — the system has
     /// already claimed the session; deactivating it there can throw and is
     /// against AVAudioSession guidance.
     public func stop(deactivateSession: Bool = true) {
+        stopImmediately(
+            inactivePolicy: deactivateSession ? .deactivate : .systemManaged,
+            clearResumeIntent: true
+        )
+    }
+
+    private func stopImmediately(
+        inactivePolicy: AudioSessionInactivePolicy,
+        clearResumeIntent: Bool
+    ) {
+        invalidatePlaybackRequest(clearResumeIntent: clearResumeIntent)
         fadeTask?.cancel()
         fadeTask = nil
         isFading = false
         _removeSpectrumTap()
-        finishStop(deactivateSession: deactivateSession)
+        finishStop(inactivePolicy: inactivePolicy)
         isPlaying = false
     }
 
@@ -406,6 +516,7 @@ public final class NoiseEngine {
             stop(deactivateSession: deactivateSession)
             return
         }
+        invalidatePlaybackRequest(clearResumeIntent: true)
         fadeTask?.cancel()
         _removeSpectrumTap()
         isPlaying = false
@@ -423,28 +534,58 @@ public final class NoiseEngine {
             }
             guard let self, !Task.isCancelled else { return }
             self.isFading = false
-            self.finishStop(deactivateSession: deactivateSession)
+            self.finishStop(
+                inactivePolicy: deactivateSession ? .deactivate : .systemManaged
+            )
         }
     }
 
-    private func finishStop(deactivateSession: Bool) {
-        engine.stop()
+    private func finishStop(inactivePolicy: AudioSessionInactivePolicy) {
+        playbackGraphHooks.stop(engine)
         engine.mainMixerNode.outputVolume = masterVolume   // undo any partial fade
-        if deactivateSession {
-            try? AVAudioSession.sharedInstance().setActive(false)
-        }
-        _lastStopDeactivatedSession = deactivateSession
+        audioSessionCoordinator.requestInactive(inactivePolicy)
+        _lastStopDeactivatedSession = inactivePolicy == .deactivate
+    }
+
+    private func invalidatePlaybackRequest(clearResumeIntent: Bool) {
+        playbackGeneration += 1
+        isPlaybackRequested = false
+        if clearResumeIntent { clearInterruptionResumeIntent() }
+    }
+
+    private func clearInterruptionResumeIntent() {
+        interruptionEpoch += 1
+        interruptionResumeToken = nil
     }
 
     /// Applies an already-parsed interruption. Internal seam for tests.
-    func _applyInterruption(type: AVAudioSession.InterruptionType,
-                            options: AVAudioSession.InterruptionOptions) {
-        // Capture playing state BEFORE stop() clears isPlaying on .began.
-        if type == .began { wasPlayingBeforeInterruption = isPlaying }
-        switch AudioSessionPolicy.interruptionAction(type: type, options: options, wasPlaying: wasPlayingBeforeInterruption) {
-        case .pause:  stop(deactivateSession: false)
-        case .resume: try? start()
-        case .none:   break
+    func _applyInterruption(
+        type: AVAudioSession.InterruptionType,
+        options: AVAudioSession.InterruptionOptions
+    ) async {
+        switch type {
+        case .began:
+            interruptionEpoch += 1
+            let epoch = interruptionEpoch
+            let shouldResume = interruptionResumeToken != nil
+                || isPlaying
+                || isPlaybackRequested
+            wasPlayingBeforeInterruption = shouldResume
+            interruptionResumeToken = shouldResume ? epoch : nil
+            stopImmediately(
+                inactivePolicy: .systemManaged,
+                clearResumeIntent: false
+            )
+        case .ended:
+            guard let token = interruptionResumeToken else { return }
+            interruptionResumeToken = nil
+            guard token == interruptionEpoch,
+                  options.contains(.shouldResume) else {
+                return
+            }
+            try? await startPlayback(clearingInterruptionResume: false)
+        @unknown default:
+            break
         }
     }
 
@@ -462,7 +603,7 @@ public final class NoiseEngine {
             guard let type = AVAudioSession.InterruptionType(
                 rawValue: rawType
             ) else { return }
-            self?._applyInterruption(
+            await self?._applyInterruption(
                 type: type,
                 options: AVAudioSession.InterruptionOptions(
                     rawValue: rawOptions
@@ -482,9 +623,13 @@ public final class NoiseEngine {
             guard let reason = AVAudioSession.RouteChangeReason(
                 rawValue: rawReason
             ) else { return }
-            if AudioSessionPolicy.routeChangeAction(reason: reason) == .pause {
-                self?.stop()
-            }
+            self?._applyRouteChange(reason: reason)
+        }
+    }
+
+    func _applyRouteChange(reason: AVAudioSession.RouteChangeReason) {
+        if AudioSessionPolicy.routeChangeAction(reason: reason) == .pause {
+            stop()
         }
     }
 
@@ -497,9 +642,11 @@ public final class NoiseEngine {
     }
 
     /// mediaserverd died: every node in the old graph is invalid. Rebuild from
-    /// scratch, restore EQ state, resume if we were playing. Internal for tests.
+    /// scratch, restore EQ state, and remain paused until explicit user action.
     func _recoverFromMediaServicesReset() {
-        let wasPlaying = isPlaying
+        playbackGeneration += 1
+        isPlaybackRequested = false
+        clearInterruptionResumeIntent()
         fadeTask?.cancel()
         fadeTask = nil
         isFading = false
@@ -516,6 +663,6 @@ public final class NoiseEngine {
         }
         eq.globalGain = globalGainState
         isPlaying = false
-        if wasPlaying { try? start() }
+        audioSessionCoordinator.requestInactive(.systemManaged)
     }
 }

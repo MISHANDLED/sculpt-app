@@ -1,9 +1,33 @@
 import Testing
 @testable import AudioEngine
+import Foundation
 
 @MainActor
 @Suite("Fade curve")
 struct FadeTests {
+
+    @Test func immediateRestartDuringFadeSkipsSessionAndKeepsGraphRunning() async throws {
+        let session = FadeSessionCoordinatorProbe()
+        let graph = FadePlaybackGraphProbe()
+        graph.running = true
+        let engine = NoiseEngine(
+            notificationCenter: NotificationCenter(),
+            audioSessionCoordinator: session,
+            playbackGraphHooks: graph.hooks
+        )
+        engine.spectrumAnalysisEnabled = false
+        engine._setPlayingForTesting(false)
+        engine.isFading = true
+
+        try await engine.start()
+
+        #expect(engine.isPlaying)
+        #expect(engine.isPlaybackRequested)
+        #expect(!engine.isFading)
+        #expect(graph.startCount == 0)
+        #expect(graph.stopCount == 0)
+        #expect(session.activationCount == 0)
+    }
 
     @Test func linearRampToExactZero() {
         #expect(Fade.curve(from: 1, steps: 4) == [0.75, 0.5, 0.25, 0])
@@ -64,5 +88,40 @@ struct FadeTests {
         engine.isFading = true
         engine.stop()
         #expect(engine.isFading == false)
+    }
+}
+
+private final class FadeSessionCoordinatorProbe: AudioSessionCoordinating,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private(set) var activationCount = 0
+
+    func activate() async throws {
+        lock.withLock { activationCount += 1 }
+    }
+
+    func requestInactive(_ policy: AudioSessionInactivePolicy) {}
+    func waitUntilIdle() async {}
+}
+
+@MainActor
+private final class FadePlaybackGraphProbe: @unchecked Sendable {
+    var running = false
+    var startCount = 0
+    var stopCount = 0
+
+    var hooks: NoiseEnginePlaybackGraphHooks {
+        NoiseEnginePlaybackGraphHooks(
+            isRunning: { [weak self] _ in self?.running == true },
+            start: { [weak self] _ in
+                self?.startCount += 1
+                self?.running = true
+            },
+            stop: { [weak self] _ in
+                self?.stopCount += 1
+                self?.running = false
+            }
+        )
     }
 }

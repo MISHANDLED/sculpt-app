@@ -42,6 +42,8 @@ final class PlaybackViewModel: ObservableObject {
     private let defaults: UserDefaults
     private var sleepDeadline: Date?
     private var sleepTask: Task<Void, Never>?
+    private var startTask: Task<Void, Never>?
+    private var startRequestID: UInt64 = 0
     private var nowPlaying: NowPlayingService?
 
     private static let kSelection = "sculptor.lastSelection"
@@ -72,14 +74,12 @@ final class PlaybackViewModel: ObservableObject {
         nowPlaying = NowPlayingService(
             onPlay: { [weak self] in
                 Task { @MainActor in
-                    guard let self, !self.isPlaying else { return }
-                    self.togglePlay()
+                    self?._handleRemotePlay()
                 }
             },
             onPause: { [weak self] in
                 Task { @MainActor in
-                    guard let self, self.isPlaying else { return }
-                    self.togglePlay()
+                    self?._handleRemotePause()
                 }
             },
             onToggle: { [weak self] in
@@ -106,23 +106,62 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     func togglePlay() {
-        if isPlaying {
+        if hasEffectivePlaybackIntent {
             stopPlayback()
             cancelSleepTimer()
         } else {
-            errorText = nil
-            do {
-                try engine.start()
-            } catch {
-                errorText = error.localizedDescription
-            }
-            _applyPlaybackState(engine.isPlaying)
+            beginPlaybackRequest()
         }
     }
 
     private func stopPlayback(fade: TimeInterval = 0.15) {
+        startRequestID += 1
+        let pendingStart = startTask
+        startTask = nil
+        pendingStart?.cancel()
         engine.stop(fadeDuration: fade)
         _applyPlaybackState(engine.isPlaying)
+    }
+
+    private var hasEffectivePlaybackIntent: Bool {
+        isPlaying || startTask != nil || engine.isPlaybackRequested
+    }
+
+    private func beginPlaybackRequest() {
+        errorText = nil
+        startRequestID += 1
+        let requestID = startRequestID
+        startTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try Task.checkCancellation()
+                try await engine.start()
+                try Task.checkCancellation()
+                guard requestID == startRequestID else { return }
+                startTask = nil
+                _applyPlaybackState(engine.isPlaying)
+            } catch is CancellationError {
+                guard requestID == startRequestID else { return }
+                startTask = nil
+                _applyPlaybackState(engine.isPlaying)
+            } catch {
+                guard requestID == startRequestID else { return }
+                startTask = nil
+                errorText = error.localizedDescription
+                _applyPlaybackState(engine.isPlaying)
+            }
+        }
+    }
+
+    func _handleRemotePlay() {
+        guard !hasEffectivePlaybackIntent else { return }
+        beginPlaybackRequest()
+    }
+
+    func _handleRemotePause() {
+        guard hasEffectivePlaybackIntent else { return }
+        stopPlayback()
+        cancelSleepTimer()
     }
 
     func setGain(band: Int, dB: Float) {

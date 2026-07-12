@@ -40,6 +40,55 @@ private final class InvalidGraphLifecycleProbe {
 @MainActor
 @Suite("Media services reset recovery")
 struct NoiseEngineMediaResetTests {
+    @Test func resetRacingBlockedActivationRemainsPausedUntilExplicitStart() async throws {
+        let session = EngineSessionCoordinatorProbe()
+        let graph = PlaybackGraphProbe()
+        let engine = NoiseEngine(
+            notificationCenter: NotificationCenter(),
+            audioSessionCoordinator: session,
+            playbackGraphHooks: graph.hooks
+        )
+        engine.spectrumAnalysisEnabled = false
+        let staleStart = Task { try await engine.start() }
+        #expect(await waitForActivation(session))
+
+        engine._recoverFromMediaServicesReset()
+        session.completeNext(.success(()))
+        await #expect(throws: CancellationError.self) {
+            try await staleStart.value
+        }
+        #expect(!engine.isPlaying)
+        #expect(!engine.isPlaybackRequested)
+
+        let explicitStart = Task { try await engine.start() }
+        #expect(await waitForActivation(session))
+        session.completeNext(.success(()))
+        try await explicitStart.value
+        #expect(engine.isPlaying)
+        #expect(session.policies().contains(.systemManaged))
+    }
+
+    @Test func resetClearsDelayedInterruptionResumeAndStaysPaused() async {
+        let session = EngineSessionCoordinatorProbe()
+        let graph = PlaybackGraphProbe()
+        let engine = NoiseEngine(
+            notificationCenter: NotificationCenter(),
+            audioSessionCoordinator: session,
+            playbackGraphHooks: graph.hooks
+        )
+        engine.spectrumAnalysisEnabled = false
+        engine._setPlayingForTesting(true)
+        await engine._applyInterruption(type: .began, options: [])
+
+        engine._recoverFromMediaServicesReset()
+        await engine._applyInterruption(type: .ended, options: .shouldResume)
+
+        #expect(!engine.isPlaying)
+        #expect(!engine.isPlaybackRequested)
+        #expect(session.activationCount() == 0)
+        #expect(session.policies().last == .systemManaged)
+    }
+
     @Test func rebuildPreservesGainsGlobalAndBandCount() {
         let engine = NoiseEngine()
         engine.setGain(band: 2, dB: 5)

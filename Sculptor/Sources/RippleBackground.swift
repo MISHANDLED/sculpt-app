@@ -4,16 +4,64 @@ import DesignSystem
 import Foundation
 import SwiftUI
 
+struct LivingContoursTime: Equatable, Sendable {
+    let phase: SIMD2<Float>
+    let noiseCell: SIMD2<Float>
+    let noiseLocal: SIMD2<Float>
+
+    static let zero = LivingContoursTime(
+        phase: .zero,
+        noiseCell: .zero,
+        noiseLocal: .zero
+    )
+}
+
 enum LivingContoursTiming {
-    static func shaderTime(_ elapsedTime: Float) -> Float {
-        guard elapsedTime.isFinite else { return 0 }
-        return max(0, elapsedTime)
+    private static let noiseChunkSeconds = 500.0
+
+    static func shaderTime(_ elapsedTime: Double) -> LivingContoursTime {
+        guard elapsedTime.isFinite else { return .zero }
+        let sanitized = max(0, elapsedTime)
+        let coarse = Float(sanitized)
+        guard coarse.isFinite else { return .zero }
+        let fine = Float(sanitized - Double(coarse))
+
+        var chunk = floor(sanitized / noiseChunkSeconds)
+        var remainder = sanitized.addingProduct(
+            -chunk,
+            noiseChunkSeconds
+        )
+        if remainder < 0 {
+            chunk -= 1
+            remainder += noiseChunkSeconds
+        } else if remainder >= noiseChunkSeconds {
+            chunk += 1
+            remainder -= noiseChunkSeconds
+        }
+
+        let noiseCell = SIMD2<Float>(
+            Float(chunk * 9),
+            Float(chunk * -7)
+        )
+        let noiseLocal = SIMD2<Float>(
+            Float(remainder * 0.018),
+            Float(remainder * -0.014)
+        )
+        guard noiseCell.x.isFinite, noiseCell.y.isFinite,
+              noiseLocal.x.isFinite, noiseLocal.y.isFinite else {
+            return .zero
+        }
+        return LivingContoursTime(
+            phase: SIMD2<Float>(coarse, fine),
+            noiseCell: noiseCell,
+            noiseLocal: noiseLocal
+        )
     }
 }
 
 struct LivingContoursPayload: Equatable {
     let canvasSize: CGSize
-    let elapsedTime: Float
+    let elapsedTime: LivingContoursTime
     let bandsLow: SIMD4<Float>
     let bandsHigh: SIMD4<Float>
     let rms: Float
@@ -125,7 +173,24 @@ struct RippleBackground: View {
         let payload = LivingContoursPayload(size: size, uniforms: uniforms)
         return ShaderLibrary.livingContours(
             .float2(payload.canvasSize),
-            .float(payload.elapsedTime),
+            .float2(
+                CGSize(
+                    width: CGFloat(payload.elapsedTime.phase.x),
+                    height: CGFloat(payload.elapsedTime.phase.y)
+                )
+            ),
+            .float2(
+                CGSize(
+                    width: CGFloat(payload.elapsedTime.noiseCell.x),
+                    height: CGFloat(payload.elapsedTime.noiseCell.y)
+                )
+            ),
+            .float2(
+                CGSize(
+                    width: CGFloat(payload.elapsedTime.noiseLocal.x),
+                    height: CGFloat(payload.elapsedTime.noiseLocal.y)
+                )
+            ),
             .float4(
                 payload.bandsLow.x,
                 payload.bandsLow.y,

@@ -52,11 +52,17 @@ The approved direction is **Living contour, balanced response**.
 AVAudioEngine EQ output
         │ 4,096 post-EQ mono samples
         ▼
+MRC tap bridge → fixed raw C submit entry
+        │ no ARC, allocation, lock, dispatch, or task traffic
+        ▼
 bounded reusable sample mailbox ── keeps only the latest pending frame
         │
         ▼
 SpectrumAnalyzer (Accelerate/vDSP analysis queue)
-        │ SpectrumSnapshot: 8 bands + RMS + peak
+        │ SpectrumSnapshot + original monotonic analysis time
+        ▼
+newest-only delivery gate ── at most one scheduled main-actor drain
+        │
         ▼
 PlaybackViewModel (@MainActor)
         │ target spectrum + playback/visibility/master-volume state
@@ -70,7 +76,7 @@ LivingContours.metal (single full-screen procedural shader)
 Dependency direction remains unchanged:
 
 - `AudioEngine` owns sample capture and spectrum analysis and has no UI dependency.
-- `RealtimeAtomics` is a private C target inside the AudioEngine package, used only to provide iOS 17-compatible C11 atomic cells; it is not a new app-facing module or remote dependency.
+- `RealtimeAtomics` is a private C/Objective-C target inside the AudioEngine package. It provides iOS 17-compatible C11 atomic cells and owns the non-ARC AVFAudio tap bridge; it is not a new app-facing module or remote dependency.
 - `Sculptor` owns animation policy, Home visibility, and the Metal-backed view.
 - `DesignSystem` continues to provide colors, spacing, typography, and foreground controls. It does not gain an `AudioEngine` dependency.
 
@@ -95,15 +101,16 @@ All published values are finite and clamped to `0...1`. Invalid or non-finite an
 
 - FFT length is fixed at 4,096 samples. The tap requests 4,096 frames but does not assume AVFAudio will honor that request.
 - Allocate one 4,096-float accumulation buffer, two 4,096-float mailbox slots, the Hann window, FFT setup, split-complex storage, magnitudes, and intermediate band storage before tap installation.
-- Storage visible to the tap uses fixed raw buffers. The installed block captures a stable unmanaged mailbox context that outlives the tap; it does not capture `NoiseEngine` or create per-callback ownership traffic.
+- Storage visible to the tap uses fixed raw buffers. A non-ARC Objective-C bridge installs the AVFAudio block and owns only a retained mailbox-storage owner until AVFAudio disposes its copied block. The analyzer is independently owned, so tap removal can be followed by immediate analyzer shutdown and deinitialization without waiting for block disposal.
+- The MRC callback reads only `floatChannelData` and `frameLength`, then calls the fixed raw C ABI `rt_spectrum_mailbox_submit(void *, const float *, intptr_t)`. The Swift entry is public so the package's Release whole-module merge preserves external linkage for the Objective-C target. Object-code audits reject callback-chain ARC, allocation, locks, dispatch, tasks, indirect transfers, system traps, and unexpected calls.
 - The tap copies arbitrary channel-0 callback lengths into the accumulation buffer. It publishes only complete 4,096-sample windows; partial windows remain accumulated for the next callback. A callback that completes more than one window is consumed in bounded chunks.
 - The two mailbox slots use C11 `_Atomic uint8_t` state transitions (`free → writing → ready → reading → free`) exposed through a tiny local `RealtimeAtomics` C target. Swift's `Synchronization.Atomic` starts at iOS 18, so it cannot satisfy this app's iOS 17 deployment floor. The producer publishes `ready` with release ordering; the worker claims it with acquire ordering before reading sample memory. Returning a slot to `free` and claiming it for writing use the corresponding release/acquire ordering. Publishing uses compare-and-exchange and `memcpy`; it never waits. The shim adds no third-party dependency and allocates its atomic cells before tap installation.
 - Publishing first tries to claim and overwrite an existing `ready` slot so only the newest pending window survives. If the worker has already claimed that slot, publishing tries the other `free` slot. If neither transition succeeds immediately, the completed window is dropped.
 - A serial analysis worker and its 60 Hz polling source are created before tap installation. The tap does not signal a semaphore, enqueue a closure, create a `Task`, or call another wake-up API.
-- The worker claims a ready slot atomically, runs the FFT without holding any shared coordination primitive, marks the slot free, and delivers the result asynchronously.
+- The worker claims a ready slot atomically, runs the FFT without holding any shared coordination primitive, marks the slot free, and submits the result plus its original monotonic analysis instant to a newest-only delivery gate. The gate holds one replaceable pending result and schedules at most one main-actor drain, so a blocked UI cannot accumulate per-result tasks.
 - No FFT, Swift `Array` mutation, heap allocation, lock, semaphore, synchronous dispatch, task creation, ARC ownership change, or blocking wait occurs in the tap callback.
 
-This is a bounded latest-useful-frame policy rather than a queue. Visual freshness matters; processing stale spectrum frames does not. Teardown removes the tap, invalidates the analyzer generation, cancels and joins the polling worker outside the audio callback, and only then destroys the mailbox. The unmanaged callback context therefore remains valid for every possible tap invocation and worker completion.
+This is a bounded latest-useful-frame policy at both the sample and UI-delivery boundaries rather than a queue. Visual freshness matters; processing stale spectrum frames does not. Teardown removes the tap before analyzer shutdown. The MRC block keeps mailbox storage valid until AVFAudio releases the copied block, while analyzer shutdown and deinitialization remain immediate and independent.
 
 ### FFT and band aggregation
 
@@ -144,8 +151,8 @@ Behavior:
 
 - Install the tap on the EQ output only when playback and spectrum analysis are both active.
 - Remove it when playback stops, analysis is disabled, the app becomes inactive, or the graph is rebuilt.
-- Deliver `SpectrumSnapshot` on the main queue.
-- After a media-services reset, recreate format-dependent analyzer metadata before reinstalling the tap.
+- Deliver only the newest `SpectrumSnapshot` on the main actor, preserving the analysis instant rather than replacing it with main-actor receive time.
+- After a media-services reset, rebuild the graph and format-dependent analyzer metadata but remain paused until a new explicit play request.
 - Analyzer setup or submission failure is non-fatal. Audio playback continues and the UI receives no new target spectrum.
 
 `NoiseEngine` gains an internal analyzer-factory injection seam used by tests. Production uses the real `SpectrumAnalyzer`; tests can inject setup failure, submission failure, or a deterministic fake without changing the public engine API.
@@ -153,6 +160,8 @@ Behavior:
 All `NoiseEngine` control-plane mutations—start, stop, fade lifecycle, graph rebuild, tap install/remove, analyzer enablement, and generation changes—are main-actor isolated. Interruption, route-change, and media-services notification handlers hop to `@MainActor` before touching the graph, tap, or analyzer lifecycle. The source-node render callback and spectrum mailbox/worker remain outside main-actor isolation and interact with the control plane only through their preallocated state.
 
 Each analyzer installation receives a monotonically increasing generation. Stop, disablement, graph rebuild, and media-services reset invalidate the current generation. A worker completion carries its submission generation, and `NoiseEngine` invokes `onSpectrumSnapshot` only when that generation is still current, playback is active, and spectrum analysis remains enabled. This rejects results already in flight when a tap is removed.
+
+Audio-session category, activation, and deactivation calls run on one process-wide serial coordinator queue, never on `MainActor`. Desired-state generations make rapid play-stop-play and cancellation deterministic: stale queued operations skip, a late activation is cleaned up only when its own request became inactive, and an older request cannot deactivate a newer active generation. `NoiseEngine.start()` awaits current activation before starting the graph; synchronous stop intent invalidates pending start work before graph teardown. Interruption handling uses one consumable resume token, while route changes, explicit stop, manual start, and media-services reset invalidate obsolete resume intent.
 
 The tap remains post-EQ and before the main mixer volume. This makes the FFT represent the generated spectral shape. `PlaybackViewModel.masterVolume` separately scales visual response strength so the NOISE knob still affects the ripple without changing the FFT's band ratios.
 
@@ -204,7 +213,7 @@ Interpolation lives in a pure `RippleAnimationState` value rather than in view-o
 - Stopping playback targets zero spectral influence but keeps time-based drift active.
 - `masterVolume` scales only the audio-driven contribution. At zero NOISE volume, the agreed paused-style baseline remains visible.
 
-The eight bands are packed into two `SIMD4<Float>` values for Metal. Other uniforms are canvas size, elapsed time, RMS, peak, audio-response scale, motion-profile scale, and the DesignSystem accent color.
+The eight bands are packed into two `SIMD4<Float>` values for Metal. Other uniforms are canvas size, RMS, peak, audio-response scale, motion-profile scale, and the DesignSystem accent color. Elapsed time remains `Double` on the CPU and is packed into coarse and residual `Float` components for periodic phases. Noise translation is packed separately as an integer lattice-cell offset plus a bounded local residual; the shader carries the local value into the cell before hashing and interpolation. This retains frame-scale motion after long uptime without introducing a visible modulo reset.
 
 ### Frame cadence
 
@@ -229,7 +238,7 @@ Audio mapping is fixed as follows:
 - RMS: total audio-driven opacity and displacement strength.
 - Peak: restrained short-lived highlight accent.
 
-Baseline time functions use staggered 8–14 second cycles to drive slow translation, rotation, and deformation independently of audio. Audio values add to that baseline; they never replace it.
+Baseline time functions use staggered 8–14 second cycles to drive slow translation, rotation, and deformation independently of audio. Audio values add to that baseline; they never replace it. Polar angle and radial distance are computed once per pixel before the four-contour loop.
 
 The selected balanced profile uses `0.10` paused line alpha, caps active line alpha at `0.30`, and caps glow alpha at `0.18`. White text, the teal play control, volume knobs, chips, and timer remain legible without adding opaque backing cards.
 
@@ -259,10 +268,11 @@ Rename scope-tap lifecycle tests to spectrum-tap tests and retain their lifecycl
 - The procedural shader is one full-screen GPU pass.
 - The FFT setup, Hann window, raw accumulation/mailbox buffers, and intermediate analysis storage are reused.
 - The audio tap performs only bounded raw-memory copies, integer bookkeeping private to the producer, and lock-free atomic slot transitions. The polling worker is created before tap installation; the tap performs no wake-up call or per-frame dispatch.
-- At most one analysis frame may be pending.
+- At most one sample window and one main-actor spectrum delivery may be pending at their respective boundaries.
 - Graph, tap, analyzer, and generation lifecycle changes are main-actor isolated.
 - Late worker completions are discarded by generation and active-state checks.
 - No analysis callback mutates SwiftUI state off the main actor.
+- AVAudioSession category and active-state negotiation runs on the serial session queue rather than the main thread.
 - Spectrum analysis is disabled when Home is covered by Presets or the scene is inactive.
 - Shader animation is paused when inactive and reduced under Low Power Mode.
 - Rendering or analysis failure cannot change `NoiseEngine.isPlaying`, the audio graph, sleep-timer behavior, or Now Playing state.
@@ -273,10 +283,11 @@ Rename scope-tap lifecycle tests to spectrum-tap tests and retain their lifecycl
 - C11 atomic-cell allocation failure or a platform reporting non-lock-free byte atomics also fails analyzer setup non-fatally; the tap is never installed.
 - Empty, short, malformed, or non-finite input produces finite zeroed values where necessary.
 - A dropped analysis frame is expected backpressure, not an error.
+- Cancellation and stale audio-session commands are expected control flow; only a current activation failure reaches the existing playback error path.
 - Arbitrary tap callback lengths are accumulated into complete FFT windows without zero-padding normal short callbacks.
 - Missing or delayed spectrum updates cause audio-driven influence to release toward zero while baseline drift continues.
 - The app build verifies MSL compilation. Because SwiftUI shader lookup and argument binding are dynamic, a simulator/device smoke check must instantiate `RippleBackground` and confirm the shader produces nonempty pixels. Runtime rendering remains decorative and never gates Home interaction or playback.
-- Audio start errors continue to use the existing `PlaybackViewModel.errorText` path.
+- Media-services reset rebuilds state but does not automatically resume. Audio start errors continue to use the existing `PlaybackViewModel.errorText` path; cancellation and stale request failures do not overwrite newer UI state.
 
 ## Testing
 
@@ -299,7 +310,8 @@ Rename scope-tap lifecycle tests to spectrum-tap tests and retain their lifecycl
 - Spectrum tap install/remove, enable/disable, stop, and graph-rebuild behavior remain idempotent.
 - A completion from an invalidated generation never reaches the view-model callback.
 - Notification-driven interruption, route-change, and media-reset paths hop to the main actor before lifecycle mutation.
-- Media-services reset recreates analyzer metadata from the rebuilt 44.1 kHz graph format.
+- Session coordinator tests prove category/activation/deactivation closures execute off-main and cover stale commands, cancellation, late completion cleanup, and idle-wait continuation safety.
+- Media-services reset recreates analyzer metadata from the rebuilt 44.1 kHz graph format and remains paused until explicit play.
 - Mailbox stress tests run under Thread Sanitizer to cover producer/consumer slot transitions and teardown ordering.
 
 ### `Sculptor` unit tests
@@ -313,11 +325,13 @@ Rename scope-tap lifecycle tests to spectrum-tap tests and retain their lifecycl
 - Attack, release, peak decay, master-volume scaling, and paused baseline values are deterministic.
 - Reduce Motion and Low Power Mode produce the intended motion profiles.
 - Spectrum-to-uniform packing preserves all eight bands in order.
+- Long-uptime shader-time packing preserves consecutive 60 fps noise drift at 262,144, 524,288, and 1,000,000 seconds, chunk-boundary carry, and periodic-phase continuity across coarse-float boundaries.
 
 ### Build and visual verification
 
 - Run `Scripts/test-all.sh`, preserving the repository's three-suite coverage after removing obsolete scope/downsample tests and adding spectrum/ripple tests.
 - Build the generated workspace for an iOS 17+ simulator to verify Metal compilation.
+- Build Debug and Release generic-device artifacts and audit the merged AudioEngine product so the fixed raw submit entry remains externally linkable after whole-module optimization.
 - Launch a simulator/device smoke host that instantiates `RippleBackground` and confirms runtime shader lookup, argument binding, and visible output.
 - Verify on simulator and device:
   - ripple is visible on Home and in the uncovered area around the opaque Sculpt sheet

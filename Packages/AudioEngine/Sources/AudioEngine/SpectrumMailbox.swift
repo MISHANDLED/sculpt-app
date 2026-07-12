@@ -21,7 +21,7 @@ private struct SpectrumMailboxProducerControl {
 
 @_cdecl("rt_spectrum_mailbox_submit")
 @inline(never)
-func rtSpectrumMailboxSubmitC(
+public func rtSpectrumMailboxSubmitC(
     _ context: UnsafeMutableRawPointer,
     _ samples: UnsafePointer<Float>,
     _ count: Int

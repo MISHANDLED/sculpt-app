@@ -55,7 +55,7 @@ struct RippleUniforms: Equatable, Sendable {
     let audioResponseScale: Float
     let motionScale: Float
     let detailScale: Float
-    let elapsedTime: Float
+    let elapsedTime: Double
 }
 
 struct RippleAnimationState: Sendable {
@@ -66,7 +66,7 @@ struct RippleAnimationState: Sendable {
 
     private var anchorInstant: ContinuousClock.Instant
     private var anchorSpectrum = SpectrumSnapshot.zero
-    private var elapsedAtAnchor: Float = 0
+    private var elapsedAtAnchor: Double = 0
     private var input: RippleAnimationInput
 
     init(at instant: ContinuousClock.Instant) {
@@ -165,10 +165,10 @@ struct RippleAnimationState: Sendable {
 
     private func elapsedTime(
         at instant: ContinuousClock.Instant
-    ) -> Float {
+    ) -> Double {
         guard input.isActive else { return elapsedAtAnchor }
         return elapsedAtAnchor
-            + Self.seconds(anchorInstant.duration(to: instant))
+            + Self.preciseSeconds(anchorInstant.duration(to: instant))
     }
 
     private static func interpolate(
@@ -214,11 +214,14 @@ struct RippleAnimationState: Sendable {
     }
 
     private static func seconds(_ duration: Duration) -> Float {
+        Float(preciseSeconds(duration))
+    }
+
+    private static func preciseSeconds(_ duration: Duration) -> Double {
         let components = duration.components
-        let whole = Float(components.seconds)
-        let fractional = Float(
-            Double(components.attoseconds) / 1_000_000_000_000_000_000
-        )
+        let whole = Double(components.seconds)
+        let fractional = Double(components.attoseconds)
+            / 1_000_000_000_000_000_000
         return max(0, whole + fractional)
     }
 

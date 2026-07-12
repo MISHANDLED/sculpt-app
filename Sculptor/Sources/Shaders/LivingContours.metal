@@ -8,9 +8,25 @@ static float contourHash(float2 point) {
     return fract(point.x * point.y);
 }
 
-static float contourNoise(float2 point) {
-    float2 cell = floor(point);
-    float2 local = fract(point);
+struct ContourNoiseCoordinate {
+    float2 cell;
+    float2 local;
+};
+
+static ContourNoiseCoordinate contourCanonicalCoordinate(
+    float2 cell,
+    float2 local
+) {
+    float2 cellDelta = floor(local);
+    ContourNoiseCoordinate coordinate;
+    coordinate.cell = cell + cellDelta;
+    coordinate.local = local - cellDelta;
+    return coordinate;
+}
+
+static float contourNoise(ContourNoiseCoordinate point) {
+    float2 cell = point.cell;
+    float2 local = point.local;
     float2 blend = local * local * (3.0 - 2.0 * local);
     float lowerLeft = contourHash(cell);
     float lowerRight = contourHash(cell + float2(1.0, 0.0));
@@ -23,10 +39,30 @@ static float contourNoise(float2 point) {
     );
 }
 
-static float contourFBM(float2 point, float detailScale) {
+static ContourNoiseCoordinate contourDetailCoordinate(
+    ContourNoiseCoordinate point
+) {
+    float2 cellChunks = floor(point.cell / 100.0);
+    float2 cellRemainder = fma(
+        cellChunks,
+        float2(-100.0),
+        point.cell
+    );
+    float2 scaledLocal = fma(
+        cellRemainder,
+        float2(2.03),
+        fma(point.local, float2(2.03), float2(7.17))
+    );
+    return contourCanonicalCoordinate(cellChunks * 203.0, scaledLocal);
+}
+
+static float contourFBM(
+    ContourNoiseCoordinate point,
+    float detailScale
+) {
     float value = contourNoise(point) * 0.67;
     if (detailScale > 0.5) {
-        value += contourNoise(point * 2.03 + 7.17) * 0.33;
+        value += contourNoise(contourDetailCoordinate(point)) * 0.33;
     }
     return value * 2.0 - 1.0;
 }
@@ -40,11 +76,18 @@ static float2 contourRotate(float2 point, float angle) {
     );
 }
 
+static float contourPhase(float2 time, float rate) {
+    float period = (2.0 * M_PI_F) / abs(rate);
+    return fma(fmod(time.x, period), rate, time.y * rate);
+}
+
 [[ stitchable ]]
 half4 livingContours(
     float2 position,
     float2 canvasSize,
-    float elapsedTime,
+    float2 elapsedTime,
+    float2 noiseTimeCell,
+    float2 noiseTimeLocal,
     float4 bandsLow,
     float4 bandsHigh,
     float rms,
@@ -59,7 +102,7 @@ half4 livingContours(
     }
     float shortestSide = max(min(canvasSize.x, canvasSize.y), 1.0);
     float2 point = (position - canvasSize * 0.5) / shortestSide;
-    float time = max(elapsedTime, 0.0);
+    float2 time = elapsedTime;
     float response = clamp(audioResponseScale, 0.0, 1.0);
 
     float bass60 = bandsLow.x;
@@ -80,13 +123,16 @@ half4 livingContours(
         clamp(motionScale, 0.0, 1.0)
     );
     float2 drift = float2(
-        sin(time * (2.0 * M_PI_F / 11.0) + mid2k * audioMotion * 0.7),
-        cos(time * (2.0 * M_PI_F / 13.0) - mid2k * audioMotion * 0.5)
+        sin(contourPhase(time, 2.0 * M_PI_F / 11.0)
+            + mid2k * audioMotion * 0.7),
+        cos(contourPhase(time, 2.0 * M_PI_F / 13.0)
+            - mid2k * audioMotion * 0.5)
     ) * (0.035 + mid2k * audioMotion * 0.020) * preservedDrift;
     point -= drift;
 
     float rotation = (
-        sin(time * (2.0 * M_PI_F / 14.0)) * 0.22 * motionScale
+        sin(contourPhase(time, 2.0 * M_PI_F / 14.0))
+            * 0.22 * motionScale
         + mid1k * audioMotion * 0.14
         - mid2k * audioMotion * 0.08
     );
@@ -94,6 +140,8 @@ half4 livingContours(
 
     float lineMask = 0.0;
     float glowMask = 0.0;
+    float angle = atan2(point.y, point.x);
+    float radialDistance = length(point);
     for (int index = 0; index < 4; ++index) {
         float contourIndex = float(index);
         float radius = 0.26
@@ -101,19 +149,23 @@ half4 livingContours(
         radius += bass60 * audioMotion
             * (0.022 + contourIndex * 0.005);
 
-        float angle = atan2(point.y, point.x);
         float lobe = sin(
             angle * (2.0 + contourIndex)
-            + time * (0.18 + contourIndex * 0.025)
+            + contourPhase(time, 0.18 + contourIndex * 0.025)
             + mid500 * audioMotion * 1.2
             + mid1k * audioMotion * 0.8
         );
         float breathing = sin(
-            time * (2.0 * M_PI_F / (8.0 + contourIndex * 1.7))
+            contourPhase(
+                time,
+                2.0 * M_PI_F / (8.0 + contourIndex * 1.7)
+            )
             + contourIndex * 1.4
         );
-        float2 noisePoint = point * (3.1 + contourIndex * 0.55);
-        noisePoint += float2(time * 0.018, -time * 0.014);
+        ContourNoiseCoordinate noisePoint = contourCanonicalCoordinate(
+            noiseTimeCell,
+            point * (3.1 + contourIndex * 0.55) + noiseTimeLocal
+        );
         float noise = contourFBM(noisePoint, detailScale);
 
         float baselineDeformation = (
@@ -122,13 +174,17 @@ half4 livingContours(
         float audioDeformation = audioMotion * (
             bass250 * breathing * 0.032
             + mid500 * lobe * 0.018
-            + mid1k * sin(angle * 3.0 - time * 0.13) * 0.018
-            + mid2k * cos(angle * 5.0 + time * 0.17) * 0.014
+            + mid1k * sin(
+                angle * 3.0 - contourPhase(time, 0.13)
+            ) * 0.018
+            + mid2k * cos(
+                angle * 5.0 + contourPhase(time, 0.17)
+            ) * 0.014
             + high4k * noise * 0.016
         );
 
         float signedDistance = abs(
-            length(point) - radius
+            radialDistance - radius
             - baselineDeformation
             - audioDeformation
         );

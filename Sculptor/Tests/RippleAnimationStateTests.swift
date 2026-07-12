@@ -49,7 +49,9 @@ struct RippleAnimationStateTests {
         #expect(abs(actual.bandsHigh.w - expected.bandsHigh.w) < tolerance)
         #expect(abs(actual.rms - expected.rms) < tolerance)
         #expect(abs(actual.peak - expected.peak) < tolerance)
-        #expect(abs(actual.elapsedTime - expected.elapsedTime) < tolerance)
+        #expect(
+            abs(actual.elapsedTime - expected.elapsedTime) < Double(tolerance)
+        )
     }
 
     @Test func attackUses120MillisecondTimeConstant() {
@@ -189,6 +191,22 @@ struct RippleAnimationStateTests {
         let afterReverse = state.uniforms(at: forward)
         expectEnvelopeAndTime(afterReverse, equals: beforeReverse)
         #expect(abs(state.uniforms(at: later).elapsedTime - 0.3) < 0.000001)
+    }
+
+    @Test func shaderTimeRetainsMillisecondResolutionAfterLongUptime() {
+        let start = clock.now
+        let longUptime = start.advanced(by: .seconds(131_072))
+        let nextMillisecond = longUptime.advanced(by: .milliseconds(1))
+        var state = RippleAnimationState(at: start)
+        state.retarget(
+            to: input(snapshot: .zero, receivedAt: nil),
+            at: start
+        )
+
+        let before = state.uniforms(at: longUptime).elapsedTime
+        let after = state.uniforms(at: nextMillisecond).elapsedTime
+
+        #expect(abs((after - before) - 0.001) < 0.000_001)
     }
 
     @Test func staleSpectrumReleasesAfter350Milliseconds() {

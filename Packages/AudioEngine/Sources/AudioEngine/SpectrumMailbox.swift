@@ -106,7 +106,10 @@ final class SpectrumMailbox: @unchecked Sendable {
         samples: UnsafePointer<Float>,
         count: Int
     ) -> Bool {
-        guard count > 0 else { return false }
+        guard count > 0,
+              count <= Int.max / MemoryLayout<Float>.stride else {
+            return false
+        }
         let producer = context.assumingMemoryBound(
             to: SpectrumMailboxProducerControl.self
         )
@@ -190,18 +193,35 @@ final class SpectrumMailbox: @unchecked Sendable {
 
         while sourceOffset < count {
             let accumulatedCount = producer.pointee.accumulatedCount
-            let accumulatorRemaining = Self.sampleCount - accumulatedCount
-            let sourceRemaining = count - sourceOffset
+            guard accumulatedCount >= 0,
+                  accumulatedCount < Self.sampleCount,
+                  sourceOffset >= 0,
+                  sourceOffset < count else {
+                producer.pointee.accumulatedCount = 0
+                return published
+            }
+
+            let stride = MemoryLayout<Float>.stride
+            let accumulatorRemaining = Self.sampleCount &- accumulatedCount
+            let sourceRemaining = count &- sourceOffset
             let copyCount = accumulatorRemaining < sourceRemaining
                 ? accumulatorRemaining
                 : sourceRemaining
+            guard copyCount > 0 else {
+                producer.pointee.accumulatedCount = 0
+                return published
+            }
+            let accumulatorByteOffset = accumulatedCount &* stride
+            let sourceByteOffset = sourceOffset &* stride
+            let copyByteCount = copyCount &* stride
             memcpy(
-                producer.pointee.accumulator.advanced(by: accumulatedCount),
-                samples.advanced(by: sourceOffset),
-                copyCount * MemoryLayout<Float>.stride
+                UnsafeMutableRawPointer(producer.pointee.accumulator)
+                    .advanced(by: accumulatorByteOffset),
+                UnsafeRawPointer(samples).advanced(by: sourceByteOffset),
+                copyByteCount
             )
-            producer.pointee.accumulatedCount = accumulatedCount + copyCount
-            sourceOffset += copyCount
+            producer.pointee.accumulatedCount = accumulatedCount &+ copyCount
+            sourceOffset = sourceOffset &+ copyCount
 
             if producer.pointee.accumulatedCount == Self.sampleCount {
                 published = publishAccumulator(producer: producer) || published

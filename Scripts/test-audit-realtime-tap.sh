@@ -61,6 +61,7 @@ build_root() {
     submit-dispatch) mailbox_flags='-DSUBMIT_DISPATCH=1' ;;
     submit-unexpected) mailbox_flags='-DSUBMIT_UNEXPECTED=1' ;;
     submit-local-call) mailbox_flags='-DSUBMIT_LOCAL_CALL=1' ;;
+    submit-system-instruction) mailbox_flags='-DSUBMIT_SYSTEM_INSTRUCTION=1' ;;
     missing-symbol) mailbox_flags='-DMISSING_C_ENTRY=1' ;;
     ambiguous-symbol) mailbox_flags='-DAMBIGUOUS_SUBMIT=1' ;;
     config-mismatch)
@@ -180,6 +181,8 @@ expect_failure submit-unexpected \
   'unexpected branch target'
 expect_failure submit-local-call \
   'unexpected local call'
+expect_failure submit-system-instruction \
+  'forbidden system instruction'
 expect_failure missing-object \
   'SpectrumMailbox.o must resolve exactly once (found 0)'
 expect_failure ambiguous-object \

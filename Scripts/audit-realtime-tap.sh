@@ -239,7 +239,15 @@ branch_records() {
           mnemonic == "retab" || mnemonic == "eret" ||
           mnemonic == "eretaa" || mnemonic == "eretab" ||
           mnemonic == "drps"
-        if (!is_direct && !is_conditional && !is_indirect && !is_return) {
+        is_system = mnemonic == "svc" || mnemonic == "hvc" ||
+          mnemonic == "smc" || mnemonic == "brk" ||
+          mnemonic == "hlt" || mnemonic ~ /^dcps[123]?$/ ||
+          mnemonic == "udf" || mnemonic == "wfe" ||
+          mnemonic == "wfi" || mnemonic == "wfet" ||
+          mnemonic == "wfit" || mnemonic == "yield" ||
+          mnemonic == "sev" || mnemonic == "sevl"
+        if (!is_direct && !is_conditional && !is_indirect && !is_return &&
+            !is_system) {
           continue
         }
 
@@ -256,6 +264,10 @@ branch_records() {
             continue
           }
           printf "RETURN\t%s\t%s\n", mnemonic, return_register
+          continue
+        }
+        if (is_system) {
+          printf "SYSTEM\t%s\t%s\n", mnemonic, fields[4]
           continue
         }
         if (is_indirect) {
@@ -333,6 +345,9 @@ audit_function() {
         ;;
       RETURN)
         fail "forbidden return register in $label: $value $detail"
+        ;;
+      SYSTEM)
+        fail "forbidden system instruction in $label: $value $detail"
         ;;
       UNRESOLVED)
         fail "unresolved or external control transfer in $label: $value $detail"

@@ -93,7 +93,13 @@ _FixtureSpectrumMailboxC14copyAndPublishTf4nnnd_n:
 #if defined(SUBMIT_LOCAL_CALL)
     bl 1f
 #endif
+#if defined(SUBMIT_SYSTEM_INSTRUCTION)
+    bl _FixtureSpectrumMailboxC18publishAccumulatorTf4nd_n
+    brk #1
+    ret
+#else
     b _FixtureSpectrumMailboxC18publishAccumulatorTf4nd_n
+#endif
 #if defined(SUBMIT_LOCAL_CALL)
 1:
     ret

@@ -1,4 +1,6 @@
+import AVFoundation
 import Foundation
+import RealtimeAtomics
 import Testing
 @testable import AudioEngine
 
@@ -112,20 +114,79 @@ final class SpectrumAnalyzerLifetimeProbe: @unchecked Sendable {
     }
 }
 
-final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
-    let submission: SpectrumSubmission
-    private let context: UnsafeMutableRawPointer
-    private let lifetimeProbe: SpectrumAnalyzerLifetimeProbe
+struct SpectrumSubmissionOwnerLifetimeSnapshot: Sendable {
+    let deinitCount: Int
+}
+
+final class SpectrumSubmissionOwnerLifetimeProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let deinitStream: AsyncStream<Void>
+    private let deinitContinuation: AsyncStream<Void>.Continuation
+    private var deinitCount = 0
+
+    init() {
+        let deinitSignal = AsyncStream<Void>.makeStream()
+        deinitStream = deinitSignal.stream
+        deinitContinuation = deinitSignal.continuation
+    }
+
+    func recordDeinit() {
+        lock.lock()
+        deinitCount += 1
+        lock.unlock()
+        deinitContinuation.yield()
+        deinitContinuation.finish()
+    }
+
+    func waitForDeinit() async {
+        for await _ in deinitStream { return }
+    }
+
+    func snapshot() -> SpectrumSubmissionOwnerLifetimeSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return SpectrumSubmissionOwnerLifetimeSnapshot(
+            deinitCount: deinitCount
+        )
+    }
+}
+
+final class StubSpectrumSubmissionOwner {
+    let context: UnsafeMutableRawPointer
+    private let lifetimeProbe: SpectrumSubmissionOwnerLifetimeProbe
 
     init(
         submitSucceeds: Bool,
-        lifetimeProbe: SpectrumAnalyzerLifetimeProbe
+        lifetimeProbe: SpectrumSubmissionOwnerLifetimeProbe
     ) {
         self.lifetimeProbe = lifetimeProbe
         context = .allocate(byteCount: 1, alignment: 1)
         context.storeBytes(of: submitSucceeds, as: Bool.self)
+    }
+
+    deinit {
+        context.deallocate()
+        lifetimeProbe.recordDeinit()
+    }
+}
+
+final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
+    let submission: SpectrumSubmission
+    private let lifetimeProbe: SpectrumAnalyzerLifetimeProbe
+
+    init(
+        submitSucceeds: Bool,
+        lifetimeProbe: SpectrumAnalyzerLifetimeProbe,
+        submissionOwnerLifetimeProbe: SpectrumSubmissionOwnerLifetimeProbe
+    ) {
+        self.lifetimeProbe = lifetimeProbe
+        let owner = StubSpectrumSubmissionOwner(
+            submitSucceeds: submitSucceeds,
+            lifetimeProbe: submissionOwnerLifetimeProbe
+        )
         submission = SpectrumSubmission(
-            context: context,
+            owner: owner,
+            context: owner.context,
             function: { context, _, _ in
                 context.load(as: Bool.self)
             }
@@ -133,7 +194,6 @@ final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
     }
 
     deinit {
-        context.deallocate()
         lifetimeProbe.recordDeinit()
     }
 
@@ -171,6 +231,9 @@ final class SpectrumAnalyzerFactorySpy {
     private(set) var generations: [UInt64] = []
     private var analyzerReferences: [WeakSpectrumAnalyzerReference] = []
     private(set) var lifetimeProbes: [SpectrumAnalyzerLifetimeProbe] = []
+    private(set) var submissionOwnerLifetimeProbes: [
+        SpectrumSubmissionOwnerLifetimeProbe
+    ] = []
     private(set) var deliveries: [
         @Sendable (SpectrumSnapshot, UInt64) -> Void
     ] = []
@@ -187,14 +250,20 @@ final class SpectrumAnalyzerFactorySpy {
             let lifetimeProbe = SpectrumAnalyzerLifetimeProbe(
                 recorder: lifecycleRecorder
             )
+            let submissionOwnerLifetimeProbe =
+                SpectrumSubmissionOwnerLifetimeProbe()
             let analyzer = StubSpectrumAnalyzer(
                 submitSucceeds: submitSucceeds,
-                lifetimeProbe: lifetimeProbe
+                lifetimeProbe: lifetimeProbe,
+                submissionOwnerLifetimeProbe: submissionOwnerLifetimeProbe
             )
             analyzerReferences.append(
                 WeakSpectrumAnalyzerReference(analyzer)
             )
             lifetimeProbes.append(lifetimeProbe)
+            submissionOwnerLifetimeProbes.append(
+                submissionOwnerLifetimeProbe
+            )
             deliveries.append(deliver)
             return analyzer
         }
@@ -219,7 +288,9 @@ final class SpectrumAnalyzerFactorySpy {
 @Suite("NoiseEngine spectrum tap")
 struct NoiseEngineSpectrumTapTests {
     @Test func installAndRemoveAreIdempotent() {
+        let recorder = SpectrumLifecycleRecorder()
         let spy = SpectrumAnalyzerFactorySpy()
+        spy.lifecycleRecorder = recorder
         let engine = makeEngine(spy)
         engine._setPlayingForTesting(true)
 
@@ -237,6 +308,10 @@ struct NoiseEngineSpectrumTapTests {
 
         engine._removeSpectrumTap()
         #expect(spy.lifetimeProbes[0].snapshot().shutdownCount == 1)
+        #expect(
+            recorder.snapshot()
+                == [.analyzerShutdown, .analyzerDeinit]
+        )
     }
 
     @Test func enablementRespectsPlaybackState() {
@@ -298,6 +373,23 @@ struct NoiseEngineSpectrumTapTests {
         #expect(snapshot.shutdownCount == 1)
         #expect(snapshot.deinitCount == 1)
         #expect(spy.analyzer(at: 0) == nil)
+        #expect(
+            recorder.snapshot()
+                == [.analyzerShutdown, .analyzerDeinit]
+        )
+    }
+
+    @Test func mediaResetShutsDownAnalyzerBeforeDeinit() {
+        let recorder = SpectrumLifecycleRecorder()
+        let spy = SpectrumAnalyzerFactorySpy()
+        spy.lifecycleRecorder = recorder
+        let engine = makeEngine(spy)
+        engine._setPlayingForTesting(true)
+        engine._installSpectrumTap()
+        engine._setPlayingForTesting(false)
+
+        engine._recoverFromMediaServicesReset()
+
         #expect(
             recorder.snapshot()
                 == [.analyzerShutdown, .analyzerDeinit]
@@ -437,6 +529,58 @@ struct NoiseEngineSpectrumTapTests {
         #expect(engine._spectrumGeneration > firstGeneration)
         #expect(spy.sampleRates == [44_100, 44_100])
         engine._removeSpectrumTap()
+    }
+
+    @Test func tapBlockOwnsSubmissionStorageUntilNodeRelease() async {
+        let ownerProbe = SpectrumSubmissionOwnerLifetimeProbe()
+        var owner: StubSpectrumSubmissionOwner? =
+            StubSpectrumSubmissionOwner(
+                submitSucceeds: true,
+                lifetimeProbe: ownerProbe
+            )
+        var submission: SpectrumSubmission? = SpectrumSubmission(
+            owner: owner!,
+            context: owner!.context,
+            function: { context, _, _ in
+                context.load(as: Bool.self)
+            }
+        )
+        var audioEngine: AVAudioEngine? = AVAudioEngine()
+        var node: AVAudioUnitEQ? = AVAudioUnitEQ(numberOfBands: 1)
+        let format = AVAudioFormat(
+            standardFormatWithSampleRate: 44_100,
+            channels: 2
+        )!
+        audioEngine!.attach(node!)
+        audioEngine!.connect(
+            node!,
+            to: audioEngine!.mainMixerNode,
+            format: format
+        )
+
+        rt_audio_node_install_spectrum_tap(
+            Unmanaged.passUnretained(node!).toOpaque(),
+            0,
+            AVAudioFrameCount(SpectrumFFT.sampleCount),
+            submission!.context,
+            submission!.function,
+            Unmanaged.passRetained(submission!.owner).toOpaque(),
+            { context in
+                Unmanaged<AnyObject>.fromOpaque(context).release()
+            }
+        )
+        submission = nil
+        owner = nil
+
+        #expect(ownerProbe.snapshot().deinitCount == 0)
+
+        node!.removeTap(onBus: 0)
+        audioEngine!.detach(node!)
+        node = nil
+        audioEngine = nil
+        await ownerProbe.waitForDeinit()
+
+        #expect(ownerProbe.snapshot().deinitCount == 1)
     }
 
     private func makeEngine(

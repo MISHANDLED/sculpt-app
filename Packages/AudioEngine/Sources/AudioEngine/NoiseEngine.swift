@@ -1,4 +1,11 @@
 import AVFoundation
+import RealtimeAtomics
+
+private func releaseRetainedSpectrumSubmissionOwner(
+    _ context: UnsafeMutableRawPointer
+) {
+    Unmanaged<AnyObject>.fromOpaque(context).release()
+}
 
 struct NoiseEngineGraphLifecycleHooks: Sendable {
     let validateEQAccess: @MainActor @Sendable () -> Void
@@ -146,14 +153,18 @@ public final class NoiseEngine {
 
         let submission = analyzer.submission
         spectrumAnalyzer = analyzer
-        eq.installTap(
-            onBus: 0,
-            bufferSize: Self.spectrumBufferSize,
-            format: nil
-        ) { buffer, _ in
-            guard let channel = buffer.floatChannelData?[0] else { return }
-            _ = submission.submit(channel, count: Int(buffer.frameLength))
-        }
+        let lifetimeContext = Unmanaged.passRetained(
+            submission.owner
+        ).toOpaque()
+        rt_audio_node_install_spectrum_tap(
+            Unmanaged.passUnretained(eq).toOpaque(),
+            0,
+            Self.spectrumBufferSize,
+            submission.context,
+            submission.function,
+            lifetimeContext,
+            releaseRetainedSpectrumSubmissionOwner
+        )
         spectrumTapInstalled = true
     }
 

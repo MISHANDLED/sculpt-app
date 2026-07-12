@@ -11,7 +11,9 @@ let package = Package(
         .target(
             name: "RealtimeAtomics",
             path: "Sources/RealtimeAtomics",
-            publicHeadersPath: "include"
+            publicHeadersPath: "include",
+            cSettings: [.unsafeFlags(["-fno-objc-arc"])],
+            linkerSettings: [.linkedFramework("AVFAudio")]
         ),
         .target(
             name: "AudioEngine",

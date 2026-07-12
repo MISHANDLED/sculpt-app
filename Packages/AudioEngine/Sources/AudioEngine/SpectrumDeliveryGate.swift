@@ -23,6 +23,8 @@ final class SpectrumDeliveryGate: @unchecked Sendable {
     private var activeGeneration: UInt64?
     private var pending: SpectrumDelivery?
     private var drainScheduled = false
+    @MainActor private var drainLoopActive = false
+    @MainActor private var synchronousDrainRequested = false
 
     init(
         schedule: @escaping Scheduler = SpectrumDeliveryGate.defaultSchedule,
@@ -72,12 +74,30 @@ final class SpectrumDeliveryGate: @unchecked Sendable {
 
     private func scheduleDrain() {
         schedule { [weak self] in
-            self?.drainOne()
+            self?.runScheduledDrain()
         }
     }
 
     @MainActor
-    private func drainOne() {
+    private func runScheduledDrain() {
+        if drainLoopActive {
+            synchronousDrainRequested = true
+            return
+        }
+
+        drainLoopActive = true
+        defer {
+            drainLoopActive = false
+            synchronousDrainRequested = false
+        }
+        repeat {
+            synchronousDrainRequested = false
+            drainOnePass()
+        } while synchronousDrainRequested
+    }
+
+    @MainActor
+    private func drainOnePass() {
         let delivery = lock.withLock { () -> SpectrumDelivery? in
             guard let candidate = pending,
                   activeGeneration == candidate.generation else {

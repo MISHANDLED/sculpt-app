@@ -40,6 +40,41 @@ final class SpectrumMainJobRecorder: @unchecked Sendable {
     }
 }
 
+final class SynchronousSpectrumMainScheduler: @unchecked Sendable {
+    private let lock = NSLock()
+    private var currentDepth = 0
+    private var maximumObservedDepth = 0
+    private var scheduledCount = 0
+
+    var schedule: SpectrumDeliveryGate.Scheduler {
+        { [weak self] job in
+            guard let self else { return }
+            self.lock.withLock {
+                self.currentDepth += 1
+                self.maximumObservedDepth = max(
+                    self.maximumObservedDepth,
+                    self.currentDepth
+                )
+                self.scheduledCount += 1
+            }
+            MainActor.assumeIsolated {
+                job()
+            }
+            self.lock.withLock {
+                self.currentDepth -= 1
+            }
+        }
+    }
+
+    var maximumDepth: Int {
+        lock.withLock { maximumObservedDepth }
+    }
+
+    var totalScheduled: Int {
+        lock.withLock { scheduledCount }
+    }
+}
+
 @MainActor
 private final class SpectrumDeliveryRecorder {
     private(set) var deliveries: [SpectrumDelivery] = []
@@ -240,6 +275,36 @@ struct SpectrumDeliveryGateTests {
                 analyzedAt: analyzedAt
             )
         ])
+    }
+
+    @Test func synchronousReentrantSubmissionsUseBoundedStack() {
+        let scheduler = SynchronousSpectrumMainScheduler()
+        let received = SpectrumDeliveryRecorder()
+        let holder = SpectrumGateHolder()
+        let analyzedAt = clock.now
+        let deliveryCount = 64
+        let gate = SpectrumDeliveryGate(
+            schedule: scheduler.schedule,
+            consume: { delivery in
+                received.append(delivery)
+                let nextIndex = received.deliveries.count
+                if nextIndex < deliveryCount {
+                    holder.gate?.submit(
+                        self.snapshot(Float(nextIndex) / Float(deliveryCount)),
+                        generation: 12,
+                        analyzedAt: analyzedAt
+                    )
+                }
+            }
+        )
+        holder.gate = gate
+        gate.activate(generation: 12)
+
+        gate.submit(snapshot(0), generation: 12, analyzedAt: analyzedAt)
+
+        #expect(received.deliveries.count == deliveryCount)
+        #expect(scheduler.totalScheduled == deliveryCount)
+        #expect(scheduler.maximumDepth <= 2)
     }
 
     private func snapshot(_ value: Float) -> SpectrumSnapshot {

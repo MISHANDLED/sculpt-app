@@ -249,7 +249,9 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     func _applyPlaybackState(_ playing: Bool) {
-        isPlaying = playing
+        if isPlaying != playing {
+            isPlaying = playing
+        }
         if !playing { clearSpectrumTarget() }
     }
 

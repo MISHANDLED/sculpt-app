@@ -1,6 +1,7 @@
 import Testing
 @testable import Sculptor
 import AudioEngine
+import Combine
 import Foundation
 import MediaPlayer
 
@@ -192,10 +193,29 @@ import MediaPlayer
         #expect(vm.spectrumReceivedAt == nil)
     }
 
+    @Test func repeatedPlaybackStateDoesNotRepublishIsPlaying() {
+        let vm = PlaybackViewModel(defaults: freshDefaults())
+        var emissions: [Bool] = []
+        let cancellable = vm.$isPlaying
+            .dropFirst()
+            .sink { emissions.append($0) }
+
+        vm._applyPlaybackState(true)
+        vm._applyPlaybackState(true)
+        vm._applyPlaybackState(false)
+        vm._applyPlaybackState(false)
+
+        withExtendedLifetime(cancellable) {
+            #expect(emissions == [true, false])
+        }
+    }
+
     @Test func missingSpectrumUpdatesPreservePlaybackTimerAndNowPlaying() {
         let engine = NoiseEngine()
         let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
         vm.nowPlayingTitle = "Failure fallback"
+        vm.setGain(band: 3, dB: 4.5)
+        vm.errorText = "Sentinel error"
         vm.setVisualizationActive(true)
         engine.onPlaybackStateChange?(true)
         vm.startSleepTimer(minutes: 30)
@@ -205,8 +225,11 @@ import MediaPlayer
         #expect(vm.spectrumSnapshot == .zero)
         #expect(vm.sleepMinutes == 30)
         #expect((vm.sleepRemaining ?? 0) > 29 * 60)
+        #expect(vm.gains[3] == 4.5)
+        #expect(vm.errorText == "Sentinel error")
         let info = MPNowPlayingInfoCenter.default().nowPlayingInfo
         #expect(info?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 1)
+        #expect(info?[MPMediaItemPropertyTitle] as? String == "Failure fallback")
         vm.cancelSleepTimer()
     }
 

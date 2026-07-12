@@ -4,7 +4,7 @@
 
 **Goal:** Remove the confirmed real-time ownership violation, bound spectrum delivery to the newest frame, eliminate main-thread audio-session negotiation, and leave media-reset recovery paused until explicit user action.
 
-**Architecture:** AVAudioNode tap entry moves from Swift to a non-ARC Objective-C bridge that owns only the submission-storage owner for the complete lifetime of the installed block and forwards a raw pointer, sample pointer, count, and C function pointer. The analyzer remains independently owned so tap removal can be followed by immediate analyzer shutdown and deinitialization even when AVFAudio defers copied-block disposal. Analyzer results enter a lock-protected newest-only delivery gate that schedules at most one main-actor job and preserves the analysis timestamp. AVAudioSession configuration and activation run through one serialized background coordinator whose command generations prevent stale activate/deactivate operations from winning; NoiseEngine keeps graph mutation on MainActor and PlaybackViewModel owns the cancellable UI request.
+**Architecture:** AVAudioNode tap entry moves from Swift to a non-ARC Objective-C bridge that owns only the submission-storage owner for the complete lifetime of the installed block and calls one fixed raw C entry with a context pointer, sample pointer, and count. The analyzer remains independently owned so tap removal can be followed by immediate analyzer shutdown and deinitialization even when AVFAudio defers copied-block disposal. Analyzer results enter a lock-protected newest-only delivery gate that schedules at most one main-actor job and preserves the analysis timestamp. AVAudioSession configuration and activation run through one serialized background coordinator whose command generations prevent stale activate/deactivate operations from winning; NoiseEngine keeps graph mutation on MainActor and PlaybackViewModel owns the cancellable UI request.
 
 **Tech Stack:** Swift 5 language mode, Swift 6 package manifest, Objective-C without ARC, C11 atomics, AVFAudio/AVFoundation, Dispatch, Swift Testing, Tuist, xcodebuild, arm64 object-code audits.
 
@@ -32,14 +32,19 @@
 - Modify: `Packages/AudioEngine/Sources/RealtimeAtomics/include/RealtimeAtomics.h`
 - Create: `Packages/AudioEngine/Sources/RealtimeAtomics/RealtimeTapBridge.m`
 - Modify: `Packages/AudioEngine/Sources/AudioEngine/SpectrumAnalyzer.swift`
+- Modify: `Packages/AudioEngine/Sources/AudioEngine/SpectrumMailbox.swift`
 - Modify: `Packages/AudioEngine/Sources/AudioEngine/NoiseEngine.swift`
 - Modify: `Packages/AudioEngine/Tests/AudioEngineTests/NoiseEngineSpectrumTapTests.swift`
+- Modify: `Packages/AudioEngine/Tests/AudioEngineTests/SpectrumMailboxTests.swift`
 - Create: `Scripts/audit-realtime-tap.sh`
+- Create: `Scripts/test-audit-realtime-tap.sh`
+- Create: `Scripts/Fixtures/RealtimeTapAudit/`
 
 **Interfaces:**
 
-- Consumes: `SpectrumSubmission.context` and its capture-free `@convention(c)` submit function.
-- Produces: `rt_audio_node_install_spectrum_tap(...)` with raw node, submit, and lifetime contexts.
+- Consumes: `SpectrumSubmission.context`, whose storage conforms to the fixed mailbox producer ABI.
+- Produces: `rt_spectrum_mailbox_submit(void *, const float *, intptr_t)` as the only audio-thread submit target.
+- Produces: `rt_audio_node_install_spectrum_tap(...)` with raw node, submit context, and lifetime context.
 - Produces: a tap block that retains the submission-storage owner only when the block is copied and releases it only when the block is disposed.
 - Preserves: `NoiseEngine._removeSpectrumTap()` removes the tap before analyzer shutdown.
 
@@ -85,7 +90,7 @@ Append to `RealtimeAtomics.h`:
 ```c
 #include <stddef.h>
 
-typedef bool (*RTSpectrumSubmitFunction)(
+bool rt_spectrum_mailbox_submit(
     void *context,
     const float *samples,
     intptr_t count
@@ -97,7 +102,6 @@ void rt_audio_node_install_spectrum_tap(
     uint32_t bus,
     uint32_t buffer_size,
     void *submit_context,
-    RTSpectrumSubmitFunction submit,
     void *lifetime_context,
     RTSpectrumReleaseFunction release_lifetime
 );
@@ -118,25 +122,21 @@ Create `RealtimeTapBridge.m` with ARC forbidden at compile time:
 @interface RTSpectrumTapContext : NSObject {
 @public
     void *_submitContext;
-    RTSpectrumSubmitFunction _submit;
     void *_lifetimeContext;
     RTSpectrumReleaseFunction _releaseLifetime;
 }
 - (instancetype)initWithSubmitContext:(void *)submitContext
-                                submit:(RTSpectrumSubmitFunction)submit
                        lifetimeContext:(void *)lifetimeContext
                        releaseLifetime:(RTSpectrumReleaseFunction)releaseLifetime;
 @end
 
 @implementation RTSpectrumTapContext
 - (instancetype)initWithSubmitContext:(void *)submitContext
-                                submit:(RTSpectrumSubmitFunction)submit
                        lifetimeContext:(void *)lifetimeContext
                        releaseLifetime:(RTSpectrumReleaseFunction)releaseLifetime {
     self = [super init];
     if (self != nil) {
         _submitContext = submitContext;
-        _submit = submit;
         _lifetimeContext = lifetimeContext;
         _releaseLifetime = releaseLifetime;
     }
@@ -161,7 +161,7 @@ static void rt_spectrum_tap_forward(
     if (channels == NULL || channels[0] == NULL || frameLength == 0) {
         return;
     }
-    context->_submit(
+    rt_spectrum_mailbox_submit(
         context->_submitContext,
         channels[0],
         (intptr_t)frameLength
@@ -173,14 +173,12 @@ void rt_audio_node_install_spectrum_tap(
     uint32_t bus,
     uint32_t bufferSize,
     void *submitContext,
-    RTSpectrumSubmitFunction submit,
     void *lifetimeContext,
     RTSpectrumReleaseFunction releaseLifetime
 ) {
     AVAudioNode *node = (AVAudioNode *)nodePointer;
     RTSpectrumTapContext *context = [[RTSpectrumTapContext alloc]
         initWithSubmitContext:submitContext
-        submit:submit
         lifetimeContext:lifetimeContext
         releaseLifetime:releaseLifetime];
     [node installTapOnBus:bus
@@ -206,12 +204,30 @@ Configure the `RealtimeAtomics` target with `-fno-objc-arc` and link `AVFAudio`:
 )
 ```
 
-- [ ] **Step 4: Replace the Swift tap closure**
+- [ ] **Step 4: Replace the Swift tap closure with a fixed raw entry**
 
-Expose `SpectrumSubmission.function` internally. Add a capture-free release function in `NoiseEngine.swift`:
+Add the fixed, non-inlined raw entry in `SpectrumMailbox.swift` and make `SpectrumSubmission` store only its owner and context:
 
 ```swift
-private func releaseRetainedSpectrumAnalyzer(
+@_cdecl("rt_spectrum_mailbox_submit")
+@inline(never)
+func rtSpectrumMailboxSubmitC(
+    _ context: UnsafeMutableRawPointer,
+    _ samples: UnsafePointer<Float>,
+    _ count: Int
+) -> Bool {
+    SpectrumMailbox.submit(
+        context: context,
+        samples: samples,
+        count: count
+    )
+}
+```
+
+Add the storage-owner release function in `NoiseEngine.swift`:
+
+```swift
+private func releaseRetainedSpectrumSubmissionOwner(
     _ context: UnsafeMutableRawPointer
 ) {
     Unmanaged<AnyObject>.fromOpaque(context).release()
@@ -222,16 +238,15 @@ Replace `eq.installTap { ... }` with:
 
 ```swift
 let lifetimeContext = Unmanaged.passRetained(
-    analyzer as AnyObject
+    submission.owner
 ).toOpaque()
 rt_audio_node_install_spectrum_tap(
     Unmanaged.passUnretained(eq).toOpaque(),
     0,
     Self.spectrumBufferSize,
     submission.context,
-    submission.function,
     lifetimeContext,
-    releaseRetainedSpectrumAnalyzer
+    releaseRetainedSpectrumSubmissionOwner
 )
 ```
 
@@ -248,9 +263,9 @@ Extend `NoiseEngineSpectrumTapTests` so install/remove and reset assert this eve
 )
 ```
 
-Run the focused spectrum lifecycle suite, full AudioEngine suite, TSan mailbox/analyzer suites, and Debug plus Release builds. Run `Scripts/audit-realtime-tap.sh` against both build roots.
+Run the focused spectrum lifecycle suite, full AudioEngine suite, TSan mailbox/analyzer suites, and Debug plus Release builds. Run `Scripts/audit-realtime-tap.sh` against both build roots. Run `Scripts/test-audit-realtime-tap.sh`, which builds normal arm64 Mach-O fixture roots and proves rejection of malformed Swift thunks, ownership, allocation, locks, dispatch, unexpected direct/tail/local calls, every indirect transfer including non-LR returns, unresolved transfers, configuration mismatches, and missing/ambiguous objects or symbols.
 
-Expected: tests pass; no Swift AVAudioPCMBuffer thunk remains; the MRC block invoke and forwarder contain no Swift/Objective-C retain/release relocation.
+Expected: tests pass; no Swift AVAudioPCMBuffer thunk or dynamic submit thunk remains; the direct block → MRC forwarder → fixed raw entry → mailbox copy/publish → lock-free atomic chain contains only its exact allowlisted calls and control flow.
 
 - [ ] **Step 6: Commit**
 
@@ -258,9 +273,13 @@ Expected: tests pass; no Swift AVAudioPCMBuffer thunk remains; the MRC block inv
 git add Packages/AudioEngine/Package.swift \
   Packages/AudioEngine/Sources/RealtimeAtomics \
   Packages/AudioEngine/Sources/AudioEngine/SpectrumAnalyzer.swift \
+  Packages/AudioEngine/Sources/AudioEngine/SpectrumMailbox.swift \
   Packages/AudioEngine/Sources/AudioEngine/NoiseEngine.swift \
   Packages/AudioEngine/Tests/AudioEngineTests/NoiseEngineSpectrumTapTests.swift \
-  Scripts/audit-realtime-tap.sh
+  Packages/AudioEngine/Tests/AudioEngineTests/SpectrumMailboxTests.swift \
+  Scripts/audit-realtime-tap.sh \
+  Scripts/test-audit-realtime-tap.sh \
+  Scripts/Fixtures/RealtimeTapAudit
 git commit -m "fix(audio): remove ARC from spectrum tap"
 ```
 

@@ -8,8 +8,19 @@ let package = Package(
         .library(name: "AudioEngine", targets: ["AudioEngine"])
     ],
     targets: [
-        .target(name: "AudioEngine"),
-        .testTarget(name: "AudioEngineTests", dependencies: ["AudioEngine"])
+        .target(
+            name: "RealtimeAtomics",
+            path: "Sources/RealtimeAtomics",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "AudioEngine",
+            dependencies: ["RealtimeAtomics"]
+        ),
+        .testTarget(
+            name: "AudioEngineTests",
+            dependencies: ["AudioEngine"]
+        )
     ],
     swiftLanguageModes: [.v5]
 )

@@ -59,7 +59,7 @@ half4 livingContours(
     }
     float shortestSide = max(min(canvasSize.x, canvasSize.y), 1.0);
     float2 point = (position - canvasSize * 0.5) / shortestSide;
-    float time = fmod(max(elapsedTime, 0.0), 168.0);
+    float time = max(elapsedTime, 0.0);
     float response = clamp(audioResponseScale, 0.0, 1.0);
 
     float bass60 = bandsLow.x;

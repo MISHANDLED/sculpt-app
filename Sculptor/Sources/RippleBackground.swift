@@ -4,6 +4,37 @@ import DesignSystem
 import Foundation
 import SwiftUI
 
+enum LivingContoursTiming {
+    static func shaderTime(_ elapsedTime: Float) -> Float {
+        guard elapsedTime.isFinite else { return 0 }
+        return max(0, elapsedTime)
+    }
+}
+
+struct LivingContoursPayload: Equatable {
+    let canvasSize: CGSize
+    let elapsedTime: Float
+    let bandsLow: SIMD4<Float>
+    let bandsHigh: SIMD4<Float>
+    let rms: Float
+    let peak: Float
+    let audioResponseScale: Float
+    let motionScale: Float
+    let detailScale: Float
+
+    init(size: CGSize, uniforms: RippleUniforms) {
+        canvasSize = size
+        elapsedTime = LivingContoursTiming.shaderTime(uniforms.elapsedTime)
+        bandsLow = uniforms.bandsLow
+        bandsHigh = uniforms.bandsHigh
+        rms = uniforms.rms
+        peak = uniforms.peak
+        audioResponseScale = uniforms.audioResponseScale
+        motionScale = uniforms.motionScale
+        detailScale = uniforms.detailScale
+    }
+}
+
 struct RippleBackground: View {
     let snapshot: SpectrumSnapshot
     let spectrumReceivedAt: ContinuousClock.Instant?
@@ -64,11 +95,11 @@ struct RippleBackground: View {
                 paused: !isActive
             )
         ) { _ in
+            // TimelineView supplies the tick; sample its monotonic instant
+            // once and let GeometryReader capture the immutable uniforms.
+            let tickInstant = clock.now
+            let uniforms = animationState.uniforms(at: tickInstant)
             GeometryReader { proxy in
-                // TimelineView supplies the tick; sample its monotonic instant
-                // once and pass that explicit value into the pure state.
-                let tickInstant = clock.now
-                let uniforms = animationState.uniforms(at: tickInstant)
                 Rectangle()
                     .fill(shader(size: proxy.size, uniforms: uniforms))
             }
@@ -91,26 +122,27 @@ struct RippleBackground: View {
         size: CGSize,
         uniforms: RippleUniforms
     ) -> Shader {
-        ShaderLibrary.livingContours(
-            .float2(size),
-            .float(uniforms.elapsedTime),
+        let payload = LivingContoursPayload(size: size, uniforms: uniforms)
+        return ShaderLibrary.livingContours(
+            .float2(payload.canvasSize),
+            .float(payload.elapsedTime),
             .float4(
-                uniforms.bandsLow.x,
-                uniforms.bandsLow.y,
-                uniforms.bandsLow.z,
-                uniforms.bandsLow.w
+                payload.bandsLow.x,
+                payload.bandsLow.y,
+                payload.bandsLow.z,
+                payload.bandsLow.w
             ),
             .float4(
-                uniforms.bandsHigh.x,
-                uniforms.bandsHigh.y,
-                uniforms.bandsHigh.z,
-                uniforms.bandsHigh.w
+                payload.bandsHigh.x,
+                payload.bandsHigh.y,
+                payload.bandsHigh.z,
+                payload.bandsHigh.w
             ),
-            .float(uniforms.rms),
-            .float(uniforms.peak),
-            .float(uniforms.audioResponseScale),
-            .float(uniforms.motionScale),
-            .float(uniforms.detailScale),
+            .float(payload.rms),
+            .float(payload.peak),
+            .float(payload.audioResponseScale),
+            .float(payload.motionScale),
+            .float(payload.detailScale),
             .color(DockColor.accent)
         )
     }

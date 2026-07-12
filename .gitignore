@@ -18,3 +18,4 @@ Tuist/Dependencies/
 # Tooling scratch
 .superpowers/
 .serena/
+.worktrees/

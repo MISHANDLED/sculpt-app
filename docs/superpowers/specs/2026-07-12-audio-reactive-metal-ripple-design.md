@@ -1,7 +1,7 @@
 # Audio-Reactive Metal Living Contours
 
 **Date:** 2026-07-12
-**Status:** Approved in discussion; awaiting written-spec review
+**Status:** Approved after written-spec review
 **Supersedes:** The Home oscilloscope from `2026-06-28-phase1b-nowplaying-visualizer-design.md`
 
 ## Summary
@@ -70,6 +70,7 @@ LivingContours.metal (single full-screen procedural shader)
 Dependency direction remains unchanged:
 
 - `AudioEngine` owns sample capture and spectrum analysis and has no UI dependency.
+- `RealtimeAtomics` is a private C target inside the AudioEngine package, used only to provide iOS 17-compatible C11 atomic cells; it is not a new app-facing module or remote dependency.
 - `Sculptor` owns animation policy, Home visibility, and the Metal-backed view.
 - `DesignSystem` continues to provide colors, spacing, typography, and foreground controls. It does not gain an `AudioEngine` dependency.
 
@@ -96,7 +97,7 @@ All published values are finite and clamped to `0...1`. Invalid or non-finite an
 - Allocate one 4,096-float accumulation buffer, two 4,096-float mailbox slots, the Hann window, FFT setup, split-complex storage, magnitudes, and intermediate band storage before tap installation.
 - Storage visible to the tap uses fixed raw buffers. The installed block captures a stable unmanaged mailbox context that outlives the tap; it does not capture `NoiseEngine` or create per-callback ownership traffic.
 - The tap copies arbitrary channel-0 callback lengths into the accumulation buffer. It publishes only complete 4,096-sample windows; partial windows remain accumulated for the next callback. A callback that completes more than one window is consumed in bounded chunks.
-- The two mailbox slots use `Synchronization.Atomic` state transitions (`free → writing → ready → reading → free`) and monotonically increasing sequence numbers. The producer publishes `ready` with release ordering; the worker claims it with acquire ordering before reading sample memory. Returning a slot to `free` and claiming it for writing use the corresponding release/acquire ordering. Publishing uses compare-and-exchange and `memcpy`; it never waits.
+- The two mailbox slots use C11 `_Atomic uint8_t` state transitions (`free → writing → ready → reading → free`) exposed through a tiny local `RealtimeAtomics` C target. Swift's `Synchronization.Atomic` starts at iOS 18, so it cannot satisfy this app's iOS 17 deployment floor. The producer publishes `ready` with release ordering; the worker claims it with acquire ordering before reading sample memory. Returning a slot to `free` and claiming it for writing use the corresponding release/acquire ordering. Publishing uses compare-and-exchange and `memcpy`; it never waits. The shim adds no third-party dependency and allocates its atomic cells before tap installation.
 - Publishing first tries to claim and overwrite an existing `ready` slot so only the newest pending window survives. If the worker has already claimed that slot, publishing tries the other `free` slot. If neither transition succeeds immediately, the completed window is dropped.
 - A serial analysis worker and its 60 Hz polling source are created before tap installation. The tap does not signal a semaphore, enqueue a closure, create a `Task`, or call another wake-up API.
 - The worker claims a ready slot atomically, runs the FFT without holding any shared coordination primitive, marks the slot free, and delivers the result asynchronously.
@@ -269,6 +270,7 @@ Rename scope-tap lifecycle tests to spectrum-tap tests and retain their lifecycl
 ## Error Handling and Fallbacks
 
 - FFT setup failure disables spectrum updates for that analyzer instance and leaves playback untouched.
+- C11 atomic-cell allocation failure or a platform reporting non-lock-free byte atomics also fails analyzer setup non-fatally; the tap is never installed.
 - Empty, short, malformed, or non-finite input produces finite zeroed values where necessary.
 - A dropped analysis frame is expected backpressure, not an error.
 - Arbitrary tap callback lengths are accumulated into complete FFT windows without zero-padding normal short callbacks.

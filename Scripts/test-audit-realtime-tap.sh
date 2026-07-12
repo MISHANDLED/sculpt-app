@@ -19,9 +19,10 @@ trap cleanup EXIT
 
 fixture_objects() {
   local root="$1"
+  local configuration="$2"
 
   printf '%s\n' \
-    "$root/Build/Intermediates.noindex/AudioEngine.build/Release-iphoneos/AudioEngine.build/Objects-normal/arm64"
+    "$root/Build/Intermediates.noindex/AudioEngine.build/$configuration/AudioEngine.build/Objects-normal/arm64"
 }
 
 compile_assembly() {
@@ -42,16 +43,18 @@ build_root() {
   local mutation="${2:-}"
   local root="$TMP_ROOT/$name"
   local objects
+  local configuration='Release-iphoneos'
+  local noise_flags=''
   local bridge_flags=''
   local mailbox_flags=''
 
-  objects="$(fixture_objects "$root")"
-  mkdir -p "$objects"
-
   case "$mutation" in
+    malformed-swift-symbol) noise_flags='-DMALFORMED_SWIFT_SYMBOL=1' ;;
     bridge-ownership) bridge_flags='-DBRIDGE_OWNERSHIP=1' ;;
     bridge-indirect) bridge_flags='-DBRIDGE_INDIRECT=1' ;;
     bridge-register-return) bridge_flags='-DBRIDGE_REGISTER_RETURN=1' ;;
+    bridge-unexpected-tail) bridge_flags='-DBRIDGE_UNEXPECTED_TAIL=1' ;;
+    bridge-unresolved-branch) bridge_flags='-DBRIDGE_UNRESOLVED_BRANCH=1' ;;
     submit-allocation) mailbox_flags='-DSUBMIT_ALLOCATION=1' ;;
     submit-lock) mailbox_flags='-DSUBMIT_LOCK=1' ;;
     submit-dispatch) mailbox_flags='-DSUBMIT_DISPATCH=1' ;;
@@ -59,13 +62,21 @@ build_root() {
     submit-local-call) mailbox_flags='-DSUBMIT_LOCAL_CALL=1' ;;
     missing-symbol) mailbox_flags='-DMISSING_C_ENTRY=1' ;;
     ambiguous-symbol) mailbox_flags='-DAMBIGUOUS_SUBMIT=1' ;;
+    config-mismatch)
+      root="$TMP_ROOT/Release-decoy-$name"
+      configuration='Profile-iphoneos'
+      ;;
     '' | old-swift-thunk | missing-object | ambiguous-object) ;;
     *) echo "unknown fixture mutation: $mutation" >&2; exit 1 ;;
   esac
 
+  objects="$(fixture_objects "$root" "$configuration")"
+  mkdir -p "$objects"
+
   compile_assembly \
     "$objects/NoiseEngine.o" \
-    -DOBJECT_NOISE_ENGINE=1
+    -DOBJECT_NOISE_ENGINE=1 \
+    $noise_flags
   compile_assembly \
     "$objects/RealtimeTapBridge.o" \
     -DOBJECT_REALTIME_TAP_BRIDGE=1 \
@@ -141,12 +152,18 @@ expect_failure() {
 expect_success valid-chain
 expect_failure old-swift-thunk \
   'Swift AVAudioPCMBuffer or AVAudioTime callback thunk is still present'
+expect_failure malformed-swift-symbol \
+  'NoiseEngine Swift text symbol was not demangled'
 expect_failure bridge-ownership \
   'forbidden ownership traffic'
 expect_failure bridge-indirect \
   'forbidden indirect branch'
 expect_failure bridge-register-return \
   'forbidden return register'
+expect_failure bridge-unexpected-tail \
+  'unexpected branch target'
+expect_failure bridge-unresolved-branch \
+  'unresolved or external control transfer'
 expect_failure submit-allocation \
   'forbidden allocation/free traffic'
 expect_failure submit-lock \
@@ -161,6 +178,8 @@ expect_failure missing-object \
   'SpectrumMailbox.o must resolve exactly once (found 0)'
 expect_failure ambiguous-object \
   'SpectrumMailbox.o must resolve exactly once (found 2)'
+expect_failure config-mismatch \
+  'invalid object configuration component: Profile-iphoneos'
 expect_failure missing-symbol \
   'fixed spectrum mailbox C entry must resolve exactly once (found 0)'
 expect_failure ambiguous-symbol \

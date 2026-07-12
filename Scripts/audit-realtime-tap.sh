@@ -58,6 +58,27 @@ find_unique_symbol() {
   printf '%s\n' "$matches"
 }
 
+object_configuration_component() {
+  local object="$1"
+  local component
+
+  component="$(
+    basename "$(
+      dirname "$(
+        dirname "$(
+          dirname "$(
+            dirname "$object"
+          )"
+        )"
+      )"
+    )"
+  )"
+  if ! rg -q '^(Debug|Release)-[[:alnum:]_.]+$' <<< "$component"; then
+    fail "invalid object configuration component: $component"
+  fi
+  printf '%s\n' "$component"
+}
+
 require_no_symbol() {
   local symbols="$1"
   local pattern="$2"
@@ -93,6 +114,10 @@ audit_noise_symbols() {
     || fail 'failed to demangle NoiseEngine Swift text symbols'
   if test "$(line_count "$demangled")" -ne "$(line_count "$swift_symbols")"; then
     fail 'NoiseEngine Swift text symbol demangling was incomplete'
+  fi
+  if awk 'NF == 0 || $0 ~ /^_?\$s/ { invalid = 1 } END { exit !invalid }' \
+    <<< "$demangled"; then
+    fail 'NoiseEngine Swift text symbol was not demangled'
   fi
   if rg -q 'AVAudioPCMBuffer|AVAudioTime' <<< "$demangled"; then
     fail 'Swift AVAudioPCMBuffer or AVAudioTime callback thunk is still present'
@@ -341,6 +366,8 @@ audit_root() {
   local mailbox_object
   local atomics_object
   local configuration
+  local configuration_component
+  local object_component
   local object
   local noise_symbols
   local bridge_symbols
@@ -368,16 +395,17 @@ audit_root() {
   mailbox_object="$(find_unique_object "$root" SpectrumMailbox.o)"
   atomics_object="$(find_unique_object "$root" RealtimeAtomics.o)"
 
-  case "$noise_object" in
-    *Debug-*) configuration=Debug ;;
-    *Release-*) configuration=Release ;;
-    *) fail 'unable to determine Debug or Release configuration' ;;
+  configuration_component="$(object_configuration_component "$noise_object")"
+  case "$configuration_component" in
+    Debug-*) configuration=Debug ;;
+    Release-*) configuration=Release ;;
+    *) fail "unable to determine Debug or Release configuration: $configuration_component" ;;
   esac
   for object in "$bridge_object" "$analyzer_object" "$mailbox_object" "$atomics_object"; do
-    case "$object" in
-      *"$configuration"-*) ;;
-      *) fail "object configuration mismatch: $object" ;;
-    esac
+    object_component="$(object_configuration_component "$object")"
+    if test "$object_component" != "$configuration_component"; then
+      fail "object configuration mismatch: $object_component != $configuration_component"
+    fi
   done
 
   noise_symbols="$(nm -nm "$noise_object")"

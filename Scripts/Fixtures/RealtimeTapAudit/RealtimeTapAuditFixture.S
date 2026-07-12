@@ -7,6 +7,13 @@ _fixture_noise_engine_install:
     bl _rt_audio_node_install_spectrum_tap
     ret
 
+#if defined(MALFORMED_SWIFT_SYMBOL)
+.globl "_$sMalformedTapThunk"
+.p2align 2
+"_$sMalformedTapThunk":
+    ret
+#endif
+
 #elif defined(OBJECT_REALTIME_TAP_BRIDGE)
 
 .section __TEXT,__text,regular,pure_instructions
@@ -29,6 +36,12 @@ _rt_spectrum_tap_forward:
 #elif defined(BRIDGE_REGISTER_RETURN)
     bl _rt_spectrum_mailbox_submit
     ret x9
+#elif defined(BRIDGE_UNEXPECTED_TAIL)
+    bl _rt_spectrum_mailbox_submit
+    b _fixture_unexpected_tail
+#elif defined(BRIDGE_UNRESOLVED_BRANCH)
+    bl _rt_spectrum_mailbox_submit
+    .long 0x14000400
 #else
     b _rt_spectrum_mailbox_submit
 #endif

@@ -1,6 +1,7 @@
 import Testing
 @testable import AudioEngine
 
+@MainActor
 @Suite("Fade curve")
 struct FadeTests {
 

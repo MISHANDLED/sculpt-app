@@ -3,6 +3,7 @@ import AVFoundation
 /// Owns the AVAudioEngine graph: white-noise source → 8-band EQ → output.
 /// UI mutates only EQ band gains (audio-unit thread-safe); it never touches
 /// the render callback.
+@MainActor
 public final class NoiseEngine {
     private var engine = AVAudioEngine()
     private var eq: AVAudioUnitEQ
@@ -11,28 +12,25 @@ public final class NoiseEngine {
     /// graph is valid before the audio session is active.
     let outputFormat = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
 
-    /// Whether the engine is currently producing audio. Driven by start/stop
-    /// and by interruption/route handling. Observed by the UI.
     public private(set) var isPlaying = false {
         didSet {
-            if oldValue != isPlaying {
-                let cb = onPlaybackStateChange
-                let v = isPlaying
-                DispatchQueue.main.async { cb?(v) }
-            }
+            guard oldValue != isPlaying else { return }
+            onPlaybackStateChange?(isPlaying)
         }
     }
-    /// Fired on the main queue whenever `isPlaying` changes. Always dispatched
-    /// asynchronously on the main queue, even when interrupted on a background thread.
-    public var onPlaybackStateChange: ((Bool) -> Void)?
 
-    /// Fired on the main queue with a downsampled (~128-point) mono window of
-    /// recent output, for the Now Playing oscilloscope. Nil when no consumer.
-    public var onScopeSamples: (([Float]) -> Void)?
+    public var onPlaybackStateChange: (@MainActor @Sendable (Bool) -> Void)?
+    public var onSpectrumSnapshot:
+        (@MainActor @Sendable (SpectrumSnapshot) -> Void)?
 
-    private var scopeTapInstalled = false
-    private static let scopeBufferSize: AVAudioFrameCount = 4096
-    private static let scopePointCount = 128
+    private var spectrumTapInstalled = false
+    private var spectrumAnalyzer: (any SpectrumAnalyzing)?
+    private var spectrumGeneration: UInt64 = 0
+    private static let spectrumBufferSize = AVAudioFrameCount(
+        SpectrumFFT.sampleCount
+    )
+    private let analyzerFactory: SpectrumAnalyzerFactory
+    private let notificationCenter: NotificationCenter
 
     private var fadeTask: Task<Void, Never>?
     private static let fadeStepInterval: TimeInterval = 0.05
@@ -68,16 +66,13 @@ public final class NoiseEngine {
         }
     }
 
-    /// Whether the oscilloscope tap should run. UI turns this off when the app
-    /// leaves the foreground so we don't downsample buffers all night for a
-    /// scope nobody sees.
-    public var scopeEnabled = true {
+    public var spectrumAnalysisEnabled = true {
         didSet {
-            guard scopeEnabled != oldValue else { return }
-            if scopeEnabled {
-                if isPlaying { _installScopeTap() }
+            guard spectrumAnalysisEnabled != oldValue else { return }
+            if spectrumAnalysisEnabled {
+                if isPlaying { _installSpectrumTap() }
             } else {
-                _removeScopeTap()
+                _removeSpectrumTap()
             }
         }
     }
@@ -90,28 +85,81 @@ public final class NoiseEngine {
     /// Test seam: current mixer volume.
     var _mixerOutputVolume: Float { engine.mainMixerNode.outputVolume }
 
-    /// Whether the scope tap is currently installed.
-    var isScopeTapInstalled: Bool { scopeTapInstalled }
+    var isSpectrumTapInstalled: Bool { spectrumTapInstalled }
+    var _spectrumGeneration: UInt64 { spectrumGeneration }
 
-    /// Installs an output tap that downsamples each buffer and delivers it on the
-    /// main queue. Idempotent. Internal (called by start(); exposed for tests).
-    func _installScopeTap() {
-        guard !scopeTapInstalled else { return }
-        eq.installTap(onBus: 0, bufferSize: Self.scopeBufferSize, format: nil) { [weak self] buffer, _ in
-            guard let self, let channel = buffer.floatChannelData?[0] else { return }
-            let frames = Int(buffer.frameLength)
-            let samples = Array(UnsafeBufferPointer(start: channel, count: frames))
-            let window = Downsample.resample(samples, to: Self.scopePointCount)
-            DispatchQueue.main.async { [weak self] in self?.onScopeSamples?(window) }
-        }
-        scopeTapInstalled = true
+    func _setPlayingForTesting(_ value: Bool) {
+        isPlaying = value
     }
 
-    /// Removes the scope tap if installed. Idempotent.
-    func _removeScopeTap() {
-        guard scopeTapInstalled else { return }
-        eq.removeTap(onBus: 0)
-        scopeTapInstalled = false
+    func _installSpectrumTap() {
+        guard !spectrumTapInstalled,
+              spectrumAnalysisEnabled,
+              isPlaying else {
+            return
+        }
+
+        spectrumGeneration &+= 1
+        let installationGeneration = spectrumGeneration
+        let sampleRate = eq.outputFormat(forBus: 0).sampleRate
+        guard let analyzer = analyzerFactory(
+            sampleRate,
+            installationGeneration,
+            { [weak self] snapshot, completedGeneration in
+                Task { @MainActor [weak self] in
+                    self?._acceptSpectrumSnapshot(
+                        snapshot,
+                        generation: completedGeneration
+                    )
+                }
+            }
+        ) else {
+            return
+        }
+
+        let submission = analyzer.submission
+        spectrumAnalyzer = analyzer
+        eq.installTap(
+            onBus: 0,
+            bufferSize: Self.spectrumBufferSize,
+            format: nil
+        ) { buffer, _ in
+            guard let channel = buffer.floatChannelData?[0] else { return }
+            _ = submission.submit(channel, count: Int(buffer.frameLength))
+        }
+        spectrumTapInstalled = true
+    }
+
+    func _removeSpectrumTap() {
+        guard spectrumTapInstalled || spectrumAnalyzer != nil else { return }
+        if spectrumTapInstalled {
+            eq.removeTap(onBus: 0)
+            spectrumTapInstalled = false
+        }
+        spectrumGeneration &+= 1
+        let analyzer = spectrumAnalyzer
+        spectrumAnalyzer = nil
+        analyzer?.shutdown()
+    }
+
+    func _acceptSpectrumSnapshot(
+        _ snapshot: SpectrumSnapshot,
+        generation: UInt64
+    ) {
+        guard generation == spectrumGeneration,
+              isPlaying,
+              spectrumAnalysisEnabled else {
+            return
+        }
+        onSpectrumSnapshot?(snapshot)
+    }
+
+    private func discardSpectrumPipelineAfterGraphLoss() {
+        spectrumTapInstalled = false
+        spectrumGeneration &+= 1
+        let analyzer = spectrumAnalyzer
+        spectrumAnalyzer = nil
+        analyzer?.shutdown()
     }
 
     /// For unit tests only: inject a pre-interruption playing state without touching
@@ -163,27 +211,74 @@ public final class NoiseEngine {
         engine.mainMixerNode.outputVolume = masterVolume
     }
 
-    public init() {
-        eq = Self.makeEQ()
+    public convenience init() {
+        self.init(
+            analyzerFactory: { sampleRate, generation, deliver in
+                SpectrumAnalyzer(
+                    sampleRate: sampleRate,
+                    generation: generation,
+                    deliver: deliver
+                )
+            },
+            notificationCenter: .default
+        )
+    }
 
+    convenience init(notificationCenter: NotificationCenter) {
+        self.init(
+            analyzerFactory: { sampleRate, generation, deliver in
+                SpectrumAnalyzer(
+                    sampleRate: sampleRate,
+                    generation: generation,
+                    deliver: deliver
+                )
+            },
+            notificationCenter: notificationCenter
+        )
+    }
+
+    init(
+        analyzerFactory: @escaping SpectrumAnalyzerFactory,
+        notificationCenter: NotificationCenter
+    ) {
+        self.analyzerFactory = analyzerFactory
+        self.notificationCenter = notificationCenter
+        eq = Self.makeEQ()
         stateL.initialize(to: NoiseSource(seed: 0x1234_5678_9ABC_DEF0))
         stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
-
         buildGraph()
 
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(handleInterruption(_:)),
-                       name: AVAudioSession.interruptionNotification, object: nil)
-        nc.addObserver(self, selector: #selector(handleRouteChange(_:)),
-                       name: AVAudioSession.routeChangeNotification, object: nil)
-        nc.addObserver(self, selector: #selector(handleMediaServicesReset(_:)),
-                       name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+        notificationCenter.addObserver(
+            self,
+            selector: #selector(handleMediaServicesReset(_:)),
+            name: AVAudioSession.mediaServicesWereResetNotification,
+            object: nil
+        )
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
-        stateL.deinitialize(count: 1); stateL.deallocate()
-        stateR.deinitialize(count: 1); stateR.deallocate()
+        fadeTask?.cancel()
+        if spectrumTapInstalled { eq.removeTap(onBus: 0) }
+        spectrumGeneration &+= 1
+        spectrumAnalyzer?.shutdown()
+        engine.stop()
+        notificationCenter.removeObserver(self)
+        stateL.deinitialize(count: 1)
+        stateL.deallocate()
+        stateR.deinitialize(count: 1)
+        stateR.deallocate()
     }
 
     public var bandCount: Int { eq.bands.count }
@@ -220,7 +315,7 @@ public final class NoiseEngine {
         try session.setActive(true)
         if !engine.isRunning { try engine.start() }
         isPlaying = true
-        if scopeEnabled { _installScopeTap() }
+        if spectrumAnalysisEnabled { _installSpectrumTap() }
     }
 
     /// `deactivateSession: false` is for interruption handling — the system has
@@ -230,7 +325,7 @@ public final class NoiseEngine {
         fadeTask?.cancel()
         fadeTask = nil
         isFading = false
-        _removeScopeTap()
+        _removeSpectrumTap()
         finishStop(deactivateSession: deactivateSession)
         isPlaying = false
     }
@@ -243,16 +338,19 @@ public final class NoiseEngine {
             return
         }
         fadeTask?.cancel()
-        _removeScopeTap()
+        _removeSpectrumTap()
         isPlaying = false
         let steps = Self.fadeStepCount(for: fadeDuration)
-        let curve = Fade.curve(from: engine.mainMixerNode.outputVolume, steps: steps)
+        let curve = Fade.curve(
+            from: engine.mainMixerNode.outputVolume,
+            steps: steps
+        )
         isFading = true
         fadeTask = Task { @MainActor [weak self] in
-            for v in curve {
+            for value in curve {
                 try? await Task.sleep(for: .seconds(Self.fadeStepInterval))
                 guard let self, !Task.isCancelled else { return }
-                self.engine.mainMixerNode.outputVolume = v
+                self.engine.mainMixerNode.outputVolume = value
             }
             guard let self, !Task.isCancelled else { return }
             self.isFading = false
@@ -281,25 +379,49 @@ public final class NoiseEngine {
         }
     }
 
-    @objc private func handleInterruption(_ note: Notification) {
-        guard let info = note.userInfo,
-              let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-        let opts = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
-            .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
-        _applyInterruption(type: type, options: opts)
+    @objc nonisolated private func handleInterruption(
+        _ note: Notification
+    ) {
+        guard let rawType = note.userInfo?[
+            AVAudioSessionInterruptionTypeKey
+        ] as? UInt else { return }
+        let rawOptions = note.userInfo?[
+            AVAudioSessionInterruptionOptionKey
+        ] as? UInt ?? 0
+
+        Task { @MainActor [weak self] in
+            guard let type = AVAudioSession.InterruptionType(
+                rawValue: rawType
+            ) else { return }
+            self?._applyInterruption(
+                type: type,
+                options: AVAudioSession.InterruptionOptions(
+                    rawValue: rawOptions
+                )
+            )
+        }
     }
 
-    @objc private func handleRouteChange(_ note: Notification) {
-        guard let info = note.userInfo,
-              let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
-        if AudioSessionPolicy.routeChangeAction(reason: reason) == .pause { stop() }
+    @objc nonisolated private func handleRouteChange(
+        _ note: Notification
+    ) {
+        guard let rawReason = note.userInfo?[
+            AVAudioSessionRouteChangeReasonKey
+        ] as? UInt else { return }
+
+        Task { @MainActor [weak self] in
+            guard let reason = AVAudioSession.RouteChangeReason(
+                rawValue: rawReason
+            ) else { return }
+            if AudioSessionPolicy.routeChangeAction(reason: reason) == .pause {
+                self?.stop()
+            }
+        }
     }
 
-    @objc private func handleMediaServicesReset(_ note: Notification) {
-        // Notification can arrive on any thread; graph rebuild must serialize
-        // with the @MainActor fade task and main-thread EQ reads.
+    @objc nonisolated private func handleMediaServicesReset(
+        _ note: Notification
+    ) {
         Task { @MainActor [weak self] in
             self?._recoverFromMediaServicesReset()
         }
@@ -314,11 +436,15 @@ public final class NoiseEngine {
         fadeTask?.cancel()
         fadeTask = nil
         isFading = false
-        scopeTapInstalled = false          // old tap died with the old graph
+
+        // The old graph is already invalid; do not message its EQ node.
+        discardSpectrumPipelineAfterGraphLoss()
         engine = AVAudioEngine()
         eq = Self.makeEQ()
         buildGraph()
-        for (i, g) in bandGains.enumerated() { eq.bands[i].gain = g }
+        for (index, gain) in bandGains.enumerated() {
+            eq.bands[index].gain = gain
+        }
         eq.globalGain = global
         isPlaying = false
         if wasPlaying { try? start() }

@@ -68,6 +68,7 @@ import Foundation
     }
 }
 
+@MainActor
 @Test func applySetsGlobalGainFromPreset() {
     let engine = NoiseEngine()
     engine.apply(.brown)

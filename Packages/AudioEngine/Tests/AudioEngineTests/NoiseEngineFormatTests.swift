@@ -2,6 +2,7 @@ import Testing
 import AVFoundation
 @testable import AudioEngine
 
+@MainActor
 @Test func usesExplicitStereo44kFormat() {
     let engine = NoiseEngine()
     #expect(engine.outputFormat.sampleRate == 44100)

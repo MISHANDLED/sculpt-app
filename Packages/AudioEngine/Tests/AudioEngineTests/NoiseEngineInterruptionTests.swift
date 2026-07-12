@@ -1,3 +1,5 @@
+import AVFoundation
+import Foundation
 import Testing
 @testable import AudioEngine
 
@@ -8,6 +10,7 @@ import Testing
 /// the post-stop `isPlaying` (always false) instead of the pre-interruption value.
 /// These tests exercise the stored-flag seam added to NoiseEngine to prove the
 /// wiring is correct without requiring a live AVAudioSession.
+@MainActor
 @Suite("NoiseEngine interruption resume wiring")
 struct NoiseEngineInterruptionTests {
 
@@ -32,5 +35,25 @@ struct NoiseEngineInterruptionTests {
         engine._setWasPlayingBeforeInterruption(true)
         // shouldResume flag absent → no resume even if was playing.
         #expect(engine._resumeDecisionForEndedInterruption(options: []) == false)
+    }
+
+    @Test func interruptionNotificationHopsToMainActor() async {
+        let center = NotificationCenter()
+        let engine = NoiseEngine(notificationCenter: center)
+        engine._setPlayingForTesting(true)
+
+        await Task.detached {
+            center.post(
+                name: AVAudioSession.interruptionNotification,
+                object: nil,
+                userInfo: [
+                    AVAudioSessionInterruptionTypeKey:
+                        AVAudioSession.InterruptionType.began.rawValue
+                ]
+            )
+        }.value
+        for _ in 0..<20 where engine.isPlaying { await Task.yield() }
+        #expect(!engine.isPlaying)
+        #expect(engine._lastStopDeactivatedSession == false)
     }
 }

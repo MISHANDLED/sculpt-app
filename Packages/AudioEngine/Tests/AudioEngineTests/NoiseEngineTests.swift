@@ -1,6 +1,7 @@
 import Testing
 @testable import AudioEngine
 
+@MainActor
 @Test func hasEightBandsAtExpectedFrequencies() {
     let e = NoiseEngine()
     #expect(e.bandCount == 8)
@@ -10,6 +11,7 @@ import Testing
     }
 }
 
+@MainActor
 @Test func setGainClampsToRange() {
     let e = NoiseEngine()
     e.setGain(band: 0, dB: 999)
@@ -20,6 +22,7 @@ import Testing
     #expect(e.gain(band: 0) == 5)
 }
 
+@MainActor
 @Test func applyPresetSetsAllBands() {
     let e = NoiseEngine()
     e.apply(.white)
@@ -28,6 +31,7 @@ import Testing
     #expect(e.gain(band: 7) < e.gain(band: 0))
 }
 
+@MainActor
 @Test func masterVolumeClampsAndDrivesMixer() {
     let engine = NoiseEngine()
     engine.masterVolume = 1.5

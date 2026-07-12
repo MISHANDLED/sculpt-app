@@ -26,6 +26,9 @@ _rt_spectrum_tap_forward:
 #endif
 #if defined(BRIDGE_INDIRECT)
     br x9
+#elif defined(BRIDGE_REGISTER_RETURN)
+    bl _rt_spectrum_mailbox_submit
+    ret x9
 #else
     b _rt_spectrum_mailbox_submit
 #endif

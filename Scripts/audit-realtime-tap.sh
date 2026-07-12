@@ -210,9 +210,29 @@ branch_records() {
           mnemonic == "brab" || mnemonic == "brabz" ||
           mnemonic == "blraa" || mnemonic == "blraaz" ||
           mnemonic == "blrab" || mnemonic == "blrabz"
-        if (!is_direct && !is_conditional && !is_indirect) continue
+        is_return = mnemonic == "ret" || mnemonic == "retaa" ||
+          mnemonic == "retab" || mnemonic == "eret" ||
+          mnemonic == "eretaa" || mnemonic == "eretab" ||
+          mnemonic == "drps"
+        if (!is_direct && !is_conditional && !is_indirect && !is_return) {
+          continue
+        }
 
         address_text = clean_address(fields[1])
+        if (is_return) {
+          return_register = count >= 4 ? clean_operand(fields[4]) : ""
+          if (mnemonic == "ret" &&
+              (return_register == "" || return_register == "x30" ||
+               return_register == "lr")) {
+            continue
+          }
+          if ((mnemonic == "retaa" || mnemonic == "retab") &&
+              return_register == "") {
+            continue
+          }
+          printf "RETURN\t%s\t%s\n", mnemonic, return_register
+          continue
+        }
         if (is_indirect) {
           printf "INDIRECT\t%s\t%s\n", mnemonic, fields[4]
           continue
@@ -285,6 +305,9 @@ audit_function() {
         ;;
       INDIRECT)
         fail "forbidden indirect branch in $label: $value $detail"
+        ;;
+      RETURN)
+        fail "forbidden return register in $label: $value $detail"
         ;;
       UNRESOLVED)
         fail "unresolved or external control transfer in $label: $value $detail"

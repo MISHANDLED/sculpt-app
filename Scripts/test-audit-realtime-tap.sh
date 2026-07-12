@@ -51,6 +51,7 @@ build_root() {
   case "$mutation" in
     bridge-ownership) bridge_flags='-DBRIDGE_OWNERSHIP=1' ;;
     bridge-indirect) bridge_flags='-DBRIDGE_INDIRECT=1' ;;
+    bridge-register-return) bridge_flags='-DBRIDGE_REGISTER_RETURN=1' ;;
     submit-allocation) mailbox_flags='-DSUBMIT_ALLOCATION=1' ;;
     submit-lock) mailbox_flags='-DSUBMIT_LOCK=1' ;;
     submit-dispatch) mailbox_flags='-DSUBMIT_DISPATCH=1' ;;
@@ -144,6 +145,8 @@ expect_failure bridge-ownership \
   'forbidden ownership traffic'
 expect_failure bridge-indirect \
   'forbidden indirect branch'
+expect_failure bridge-register-return \
+  'forbidden return register'
 expect_failure submit-allocation \
   'forbidden allocation/free traffic'
 expect_failure submit-lock \

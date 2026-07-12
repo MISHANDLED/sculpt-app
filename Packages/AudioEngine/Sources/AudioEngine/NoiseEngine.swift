@@ -54,7 +54,10 @@ public final class NoiseEngine {
 
     public var onPlaybackStateChange: (@MainActor @Sendable (Bool) -> Void)?
     public var onSpectrumSnapshot:
-        (@MainActor @Sendable (SpectrumSnapshot) -> Void)?
+        (@MainActor @Sendable (
+            SpectrumSnapshot,
+            ContinuousClock.Instant
+        ) -> Void)?
 
     private var spectrumTapInstalled = false
     private var spectrumAnalyzer: (any SpectrumAnalyzing)?
@@ -63,6 +66,17 @@ public final class NoiseEngine {
         SpectrumFFT.sampleCount
     )
     private let analyzerFactory: SpectrumAnalyzerFactory
+    private let spectrumDeliverySchedule: SpectrumDeliveryGate.Scheduler
+    private lazy var spectrumDeliveryGate = SpectrumDeliveryGate(
+        schedule: spectrumDeliverySchedule,
+        consume: { [weak self] delivery in
+            self?._acceptSpectrumSnapshot(
+                delivery.snapshot,
+                generation: delivery.generation,
+                analyzedAt: delivery.analyzedAt
+            )
+        }
+    )
     private let notificationCenter: NotificationCenter
     private let graphLifecycleHooks: NoiseEngineGraphLifecycleHooks
 
@@ -136,21 +150,22 @@ public final class NoiseEngine {
         spectrumGeneration &+= 1
         let installationGeneration = spectrumGeneration
         let sampleRate = eq.outputFormat(forBus: 0).sampleRate
+        let deliveryGate = spectrumDeliveryGate
         guard let analyzer = analyzerFactory(
             sampleRate,
             installationGeneration,
-            { [weak self] snapshot, completedGeneration in
-                Task { @MainActor [weak self] in
-                    self?._acceptSpectrumSnapshot(
-                        snapshot,
-                        generation: completedGeneration
-                    )
-                }
+            { [deliveryGate] snapshot, completedGeneration in
+                deliveryGate.submit(
+                    snapshot,
+                    generation: completedGeneration,
+                    analyzedAt: ContinuousClock().now
+                )
             }
         ) else {
             return
         }
 
+        deliveryGate.activate(generation: installationGeneration)
         let submission = analyzer.submission
         spectrumAnalyzer = analyzer
         let lifetimeContext = Unmanaged.passRetained(
@@ -170,6 +185,7 @@ public final class NoiseEngine {
 
     func _removeSpectrumTap() {
         guard spectrumTapInstalled || spectrumAnalyzer != nil else { return }
+        spectrumDeliveryGate.deactivate()
         if spectrumTapInstalled {
             eq.removeTap(onBus: 0)
             spectrumTapInstalled = false
@@ -182,17 +198,21 @@ public final class NoiseEngine {
 
     func _acceptSpectrumSnapshot(
         _ snapshot: SpectrumSnapshot,
-        generation: UInt64
+        generation: UInt64,
+        analyzedAt: ContinuousClock.Instant
     ) {
         guard generation == spectrumGeneration,
               isPlaying,
               spectrumAnalysisEnabled else {
             return
         }
-        onSpectrumSnapshot?(snapshot)
+        onSpectrumSnapshot?(snapshot, analyzedAt)
     }
 
     private func discardSpectrumPipelineAfterGraphLoss() {
+        if spectrumTapInstalled || spectrumAnalyzer != nil {
+            spectrumDeliveryGate.deactivate()
+        }
         spectrumTapInstalled = false
         spectrumGeneration &+= 1
         let analyzer = spectrumAnalyzer
@@ -278,9 +298,12 @@ public final class NoiseEngine {
     init(
         analyzerFactory: @escaping SpectrumAnalyzerFactory,
         notificationCenter: NotificationCenter,
-        graphLifecycleHooks: NoiseEngineGraphLifecycleHooks = .none
+        graphLifecycleHooks: NoiseEngineGraphLifecycleHooks = .none,
+        spectrumDeliverySchedule: @escaping SpectrumDeliveryGate.Scheduler =
+            SpectrumDeliveryGate.defaultSchedule
     ) {
         self.analyzerFactory = analyzerFactory
+        self.spectrumDeliverySchedule = spectrumDeliverySchedule
         self.notificationCenter = notificationCenter
         self.graphLifecycleHooks = graphLifecycleHooks
         storedEQ = Self.makeEQ()
@@ -310,6 +333,9 @@ public final class NoiseEngine {
 
     isolated deinit {
         fadeTask?.cancel()
+        if spectrumTapInstalled || spectrumAnalyzer != nil {
+            spectrumDeliveryGate.deactivate()
+        }
         if spectrumTapInstalled { eq.removeTap(onBus: 0) }
         spectrumGeneration &+= 1
         spectrumAnalyzer?.shutdown()

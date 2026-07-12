@@ -453,7 +453,7 @@ struct NoiseEngineSpectrumTapTests {
         submitEngine.onPlaybackStateChange = { _ in
             submitPlaybackChanges += 1
         }
-        submitEngine.onSpectrumSnapshot = { _ in
+        submitEngine.onSpectrumSnapshot = { _, _ in
             submitSpectrumChanges += 1
         }
         submitEngine._installSpectrumTap()
@@ -478,7 +478,7 @@ struct NoiseEngineSpectrumTapTests {
         let spy = SpectrumAnalyzerFactorySpy()
         let engine = makeEngine(spy)
         var received: [SpectrumSnapshot] = []
-        engine.onSpectrumSnapshot = { received.append($0) }
+        engine.onSpectrumSnapshot = { snapshot, _ in received.append(snapshot) }
         engine._setPlayingForTesting(true)
         engine._installSpectrumTap()
 
@@ -501,7 +501,7 @@ struct NoiseEngineSpectrumTapTests {
         let spy = SpectrumAnalyzerFactorySpy()
         let engine = makeEngine(spy)
         var deliveryCount = 0
-        engine.onSpectrumSnapshot = { _ in deliveryCount += 1 }
+        engine.onSpectrumSnapshot = { _, _ in deliveryCount += 1 }
         engine._setPlayingForTesting(true)
         engine._installSpectrumTap()
 
@@ -528,6 +528,66 @@ struct NoiseEngineSpectrumTapTests {
 
         #expect(engine._spectrumGeneration > firstGeneration)
         #expect(spy.sampleRates == [44_100, 44_100])
+        engine._removeSpectrumTap()
+    }
+
+    @Test func blockedMainDeliveryKeepsOnlyNewestAnalyzerCompletion() {
+        let scheduler = SpectrumMainJobRecorder()
+        let spy = SpectrumAnalyzerFactorySpy()
+        let engine = makeEngine(spy, schedule: scheduler.schedule)
+        var received: [SpectrumSnapshot] = []
+        engine.onSpectrumSnapshot = { snapshot, _ in received.append(snapshot) }
+        engine._setPlayingForTesting(true)
+        engine._installSpectrumTap()
+
+        for index in 0..<128 {
+            spy.complete(
+                SpectrumSnapshot(
+                    bands: SIMD8<Float>(repeating: Float(index) / 127),
+                    rms: Float(index) / 127,
+                    peak: Float(index) / 127
+                ),
+                deliveryIndex: 0
+            )
+        }
+
+        #expect(scheduler.totalScheduled == 1)
+        scheduler.runNext()
+        #expect(received.count == 1)
+        #expect(received[0].rms == 1)
+        engine._removeSpectrumTap()
+    }
+
+    @Test func staleReinstallCompletionCannotDisplaceCurrentPending() {
+        let scheduler = SpectrumMainJobRecorder()
+        let spy = SpectrumAnalyzerFactorySpy()
+        let engine = makeEngine(spy, schedule: scheduler.schedule)
+        var received: [SpectrumSnapshot] = []
+        engine.onSpectrumSnapshot = { snapshot, _ in received.append(snapshot) }
+        engine._setPlayingForTesting(true)
+        engine._installSpectrumTap()
+        spy.complete(.zero, deliveryIndex: 0)
+
+        engine._removeSpectrumTap()
+        engine._installSpectrumTap()
+        let current = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 0.75),
+            rms: 0.75,
+            peak: 0.75
+        )
+        spy.complete(current, deliveryIndex: 1)
+        spy.complete(
+            SpectrumSnapshot(
+                bands: SIMD8<Float>(repeating: 1),
+                rms: 1,
+                peak: 1
+            ),
+            deliveryIndex: 0
+        )
+
+        #expect(scheduler.totalScheduled == 1)
+        scheduler.runNext()
+        #expect(received == [current])
         engine._removeSpectrumTap()
     }
 
@@ -584,11 +644,14 @@ struct NoiseEngineSpectrumTapTests {
     }
 
     private func makeEngine(
-        _ spy: SpectrumAnalyzerFactorySpy
+        _ spy: SpectrumAnalyzerFactorySpy,
+        schedule: @escaping SpectrumDeliveryGate.Scheduler =
+            SpectrumDeliveryGate.defaultSchedule
     ) -> NoiseEngine {
         NoiseEngine(
             analyzerFactory: spy.factory,
-            notificationCenter: NotificationCenter()
+            notificationCenter: NotificationCenter(),
+            spectrumDeliverySchedule: schedule
         )
     }
 }

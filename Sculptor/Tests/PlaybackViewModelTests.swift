@@ -104,7 +104,7 @@ import MediaPlayer
         )
 
         vm.setVisualizationActive(true)
-        engine.onSpectrumSnapshot?(snapshot)
+        engine.onSpectrumSnapshot?(snapshot, ContinuousClock().now)
 
         #expect(vm.spectrumSnapshot == .zero)
         #expect(vm.spectrumReceivedAt == nil)
@@ -121,7 +121,7 @@ import MediaPlayer
 
         vm.setVisualizationActive(true)
         engine.onPlaybackStateChange?(true)
-        engine.onSpectrumSnapshot?(snapshot)
+        engine.onSpectrumSnapshot?(snapshot, ContinuousClock().now)
 
         #expect(vm.spectrumSnapshot == snapshot)
         #expect(vm.spectrumReceivedAt != nil)
@@ -137,7 +137,7 @@ import MediaPlayer
         )
 
         engine.onPlaybackStateChange?(true)
-        engine.onSpectrumSnapshot?(snapshot)
+        engine.onSpectrumSnapshot?(snapshot, ContinuousClock().now)
 
         #expect(vm.spectrumSnapshot == .zero)
         #expect(vm.spectrumReceivedAt == nil)
@@ -162,6 +162,39 @@ import MediaPlayer
         #expect(vm.spectrumSnapshot == .zero)
         #expect(vm.spectrumReceivedAt == nil)
         #expect(!engine.spectrumAnalysisEnabled)
+    }
+
+    @Test func delayedSpectrumCallbackPreservesAnalysisTimeAndIsImmediatelyStale() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        let clock = ContinuousClock()
+        let analyzedAt = clock.now
+        let deliveredAt = analyzedAt.advanced(by: .milliseconds(500))
+        let snapshot = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 1),
+            rms: 1,
+            peak: 1
+        )
+        vm.setVisualizationActive(true)
+        engine.onPlaybackStateChange?(true)
+
+        engine.onSpectrumSnapshot?(snapshot, analyzedAt)
+
+        #expect(vm.spectrumReceivedAt == analyzedAt)
+        var ripple = RippleAnimationState(at: deliveredAt)
+        ripple.retarget(
+            to: RippleAnimationInput(
+                snapshot: vm.spectrumSnapshot,
+                receivedAt: vm.spectrumReceivedAt,
+                isPlaying: vm.isPlaying,
+                masterVolume: vm.masterVolume,
+                isActive: vm.visualizationActive,
+                reduceMotion: false,
+                lowPowerMode: false
+            ),
+            at: deliveredAt
+        )
+        #expect(ripple.uniforms(at: deliveredAt).rms == 0)
     }
 
     @Test func activeVisualizationReenablesAnalysis() {

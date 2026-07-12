@@ -43,7 +43,6 @@ final class PlaybackViewModel: ObservableObject {
     private var sleepDeadline: Date?
     private var sleepTask: Task<Void, Never>?
     private var nowPlaying: NowPlayingService?
-    private let clock = ContinuousClock()
 
     private static let kSelection = "sculptor.lastSelection"
     private static let kGains = "sculptor.lastGains"
@@ -61,9 +60,9 @@ final class PlaybackViewModel: ObservableObject {
         engine.onPlaybackStateChange = { [weak self] playing in
             self?._applyPlaybackState(playing)
         }
-        engine.onSpectrumSnapshot = { [weak self] snapshot in
+        engine.onSpectrumSnapshot = { [weak self] snapshot, analyzedAt in
             guard let self else { return }
-            self._ingestSpectrumSnapshot(snapshot, at: self.clock.now)
+            self._ingestSpectrumSnapshot(snapshot, at: analyzedAt)
         }
         let storedVolume = (defaults.object(forKey: Self.kVolume) as? Double).map(Float.init) ?? 1.0
         masterVolume = storedVolume

@@ -4,6 +4,40 @@ import Testing
 @testable import AudioEngine
 
 @MainActor
+private final class InvalidGraphLifecycleProbe {
+    private let recorder: SpectrumLifecycleRecorder
+    private(set) var graphIsValid = true
+    private(set) var invalidEQAccessCount = 0
+
+    init(recorder: SpectrumLifecycleRecorder) {
+        self.recorder = recorder
+    }
+
+    var hooks: NoiseEngineGraphLifecycleHooks {
+        NoiseEngineGraphLifecycleHooks(
+            validateEQAccess: { [weak self] in
+                guard let self else { return }
+                if !graphIsValid {
+                    invalidEQAccessCount += 1
+                }
+            },
+            willReplaceGraph: { [weak self] in
+                self?.recorder.record(.graphWillReplace)
+            },
+            didReplaceGraph: { [weak self] in
+                guard let self else { return }
+                graphIsValid = true
+                recorder.record(.graphDidReplace)
+            }
+        )
+    }
+
+    func markGraphLost() {
+        graphIsValid = false
+    }
+}
+
+@MainActor
 @Suite("Media services reset recovery")
 struct NoiseEngineMediaResetTests {
     @Test func rebuildPreservesGainsGlobalAndBandCount() {
@@ -30,13 +64,64 @@ struct NoiseEngineMediaResetTests {
 
         engine._recoverFromMediaServicesReset()
         #expect(!engine.isSpectrumTapInstalled)
-        #expect(spy.analyzers[0].shutdownCount == 1)
+        #expect(spy.lifetimeProbes[0].snapshot().shutdownCount == 1)
+        #expect(spy.lifetimeProbes[0].snapshot().deinitCount == 1)
 
         engine._setPlayingForTesting(true)
         engine._installSpectrumTap()
         #expect(engine._spectrumGeneration > firstGeneration)
         #expect(spy.sampleRates == [44_100, 44_100])
         engine._removeSpectrumTap()
+    }
+
+    @Test func invalidGraphRecoveryUsesShadowsAndJoinsBeforeReplacement() {
+        let recorder = SpectrumLifecycleRecorder()
+        let graphProbe = InvalidGraphLifecycleProbe(recorder: recorder)
+        let spy = SpectrumAnalyzerFactorySpy()
+        spy.lifecycleRecorder = recorder
+        let engine = NoiseEngine(
+            analyzerFactory: spy.factory,
+            notificationCenter: NotificationCenter(),
+            graphLifecycleHooks: graphProbe.hooks
+        )
+        engine.setGain(band: 2, dB: 5)
+        engine.setGlobalGain(3)
+        engine._setPlayingForTesting(true)
+        engine._installSpectrumTap()
+        let installedGeneration = engine._spectrumGeneration
+        let lifetimeProbe = spy.lifetimeProbes[0]
+        lifetimeProbe.inspectShutdown { [weak engine] in
+            MainActor.assumeIsolated {
+                SpectrumShutdownObservation(
+                    tapInstalled: engine?.isSpectrumTapInstalled,
+                    generation: engine?._spectrumGeneration
+                )
+            }
+        }
+        engine._setPlayingForTesting(false)
+        graphProbe.markGraphLost()
+
+        engine._recoverFromMediaServicesReset()
+
+        let lifetime = lifetimeProbe.snapshot()
+        #expect(graphProbe.invalidEQAccessCount == 0)
+        #expect(engine.gain(band: 2) == 5)
+        #expect(abs(engine.globalGain - 3) < 0.001)
+        #expect(!engine.isSpectrumTapInstalled)
+        #expect(lifetime.tapInstalledAtShutdown == false)
+        #expect(lifetime.generationAtShutdown! > installedGeneration)
+        #expect(lifetime.shutdownCount == 1)
+        #expect(lifetime.deinitCount == 1)
+        #expect(spy.analyzer(at: 0) == nil)
+        #expect(
+            recorder.snapshot()
+                == [
+                    .analyzerShutdown,
+                    .analyzerDeinit,
+                    .graphWillReplace,
+                    .graphDidReplace,
+                ]
+        )
     }
 
     @Test func resetNotificationHopsToMainActor() async {

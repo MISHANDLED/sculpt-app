@@ -1,12 +1,38 @@
 import AVFoundation
 
+struct NoiseEngineGraphLifecycleHooks: Sendable {
+    let validateEQAccess: @MainActor @Sendable () -> Void
+    let willReplaceGraph: @MainActor @Sendable () -> Void
+    let didReplaceGraph: @MainActor @Sendable () -> Void
+
+    static let none = NoiseEngineGraphLifecycleHooks(
+        validateEQAccess: {},
+        willReplaceGraph: {},
+        didReplaceGraph: {}
+    )
+}
+
 /// Owns the AVAudioEngine graph: white-noise source → 8-band EQ → output.
 /// UI mutates only EQ band gains (audio-unit thread-safe); it never touches
 /// the render callback.
 @MainActor
 public final class NoiseEngine {
     private var engine = AVAudioEngine()
-    private var eq: AVAudioUnitEQ
+    private var storedEQ: AVAudioUnitEQ
+    private var eq: AVAudioUnitEQ {
+        get {
+            graphLifecycleHooks.validateEQAccess()
+            return storedEQ
+        }
+        set {
+            storedEQ = newValue
+        }
+    }
+    private var bandGainState = [Float](
+        repeating: 0,
+        count: AudioEngineModule.bandFrequencies.count
+    )
+    private var globalGainState: Float = 0
 
     /// Explicit graph format. Built independently of the output node so the
     /// graph is valid before the audio session is active.
@@ -31,6 +57,7 @@ public final class NoiseEngine {
     )
     private let analyzerFactory: SpectrumAnalyzerFactory
     private let notificationCenter: NotificationCenter
+    private let graphLifecycleHooks: NoiseEngineGraphLifecycleHooks
 
     private var fadeTask: Task<Void, Never>?
     private static let fadeStepInterval: TimeInterval = 0.05
@@ -239,11 +266,13 @@ public final class NoiseEngine {
 
     init(
         analyzerFactory: @escaping SpectrumAnalyzerFactory,
-        notificationCenter: NotificationCenter
+        notificationCenter: NotificationCenter,
+        graphLifecycleHooks: NoiseEngineGraphLifecycleHooks = .none
     ) {
         self.analyzerFactory = analyzerFactory
         self.notificationCenter = notificationCenter
-        eq = Self.makeEQ()
+        self.graphLifecycleHooks = graphLifecycleHooks
+        storedEQ = Self.makeEQ()
         stateL.initialize(to: NoiseSource(seed: 0x1234_5678_9ABC_DEF0))
         stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
         buildGraph()
@@ -268,7 +297,7 @@ public final class NoiseEngine {
         )
     }
 
-    deinit {
+    isolated deinit {
         fadeTask?.cancel()
         if spectrumTapInstalled { eq.removeTap(onBus: 0) }
         spectrumGeneration &+= 1
@@ -286,17 +315,21 @@ public final class NoiseEngine {
     public func centerFrequency(band: Int) -> Float { eq.bands[band].frequency }
 
     public func setGain(band: Int, dB: Float) {
-        eq.bands[band].gain = min(12, max(-24, dB))
+        let gain = min(12, max(-24, dB))
+        bandGainState[band] = gain
+        eq.bands[band].gain = gain
     }
 
-    public func gain(band: Int) -> Float { eq.bands[band].gain }
+    public func gain(band: Int) -> Float { bandGainState[band] }
 
     /// Overall EQ output gain in dB (preset loudness makeup). Clamped ±24.
     public func setGlobalGain(_ dB: Float) {
-        eq.globalGain = min(24, max(-24, dB))
+        let gain = min(24, max(-24, dB))
+        globalGainState = gain
+        eq.globalGain = gain
     }
 
-    public var globalGain: Float { eq.globalGain }
+    public var globalGain: Float { globalGainState }
 
     public func apply(_ preset: NoisePreset) {
         for (i, g) in preset.gains.enumerated() where i < eq.bands.count {
@@ -430,8 +463,6 @@ public final class NoiseEngine {
     /// mediaserverd died: every node in the old graph is invalid. Rebuild from
     /// scratch, restore EQ state, resume if we were playing. Internal for tests.
     func _recoverFromMediaServicesReset() {
-        let bandGains = eq.bands.map(\.gain)
-        let global = eq.globalGain
         let wasPlaying = isPlaying
         fadeTask?.cancel()
         fadeTask = nil
@@ -439,13 +470,15 @@ public final class NoiseEngine {
 
         // The old graph is already invalid; do not message its EQ node.
         discardSpectrumPipelineAfterGraphLoss()
+        graphLifecycleHooks.willReplaceGraph()
         engine = AVAudioEngine()
         eq = Self.makeEQ()
+        graphLifecycleHooks.didReplaceGraph()
         buildGraph()
-        for (index, gain) in bandGains.enumerated() {
+        for (index, gain) in bandGainState.enumerated() {
             eq.bands[index].gain = gain
         }
-        eq.globalGain = global
+        eq.globalGain = globalGainState
         isPlaying = false
         if wasPlaying { try? start() }
     }

@@ -2,12 +2,126 @@ import Foundation
 import Testing
 @testable import AudioEngine
 
+enum SpectrumLifecycleEvent: Equatable, Sendable {
+    case analyzerShutdown
+    case analyzerDeinit
+    case graphWillReplace
+    case graphDidReplace
+}
+
+final class SpectrumLifecycleRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [SpectrumLifecycleEvent] = []
+
+    func record(_ event: SpectrumLifecycleEvent) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    func snapshot() -> [SpectrumLifecycleEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+}
+
+struct SpectrumShutdownObservation: Sendable {
+    let tapInstalled: Bool?
+    let generation: UInt64?
+}
+
+struct SpectrumAnalyzerLifetimeSnapshot: Sendable {
+    let shutdownCount: Int
+    let deinitCount: Int
+    let shutdownOnMainThread: Bool?
+    let deinitOnMainThread: Bool?
+    let tapInstalledAtShutdown: Bool?
+    let generationAtShutdown: UInt64?
+}
+
+final class SpectrumAnalyzerLifetimeProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let recorder: SpectrumLifecycleRecorder?
+    private let deinitStream: AsyncStream<Void>
+    private let deinitContinuation: AsyncStream<Void>.Continuation
+    private var shutdownObservation:
+        (@Sendable () -> SpectrumShutdownObservation)?
+    private var shutdownCount = 0
+    private var deinitCount = 0
+    private var shutdownOnMainThread: Bool?
+    private var deinitOnMainThread: Bool?
+    private var tapInstalledAtShutdown: Bool?
+    private var generationAtShutdown: UInt64?
+
+    init(recorder: SpectrumLifecycleRecorder?) {
+        let deinitSignal = AsyncStream<Void>.makeStream()
+        self.recorder = recorder
+        deinitStream = deinitSignal.stream
+        deinitContinuation = deinitSignal.continuation
+    }
+
+    func inspectShutdown(
+        using observation: @escaping @Sendable () -> SpectrumShutdownObservation
+    ) {
+        lock.lock()
+        shutdownObservation = observation
+        lock.unlock()
+    }
+
+    func recordShutdown() {
+        lock.lock()
+        let observation = shutdownObservation
+        lock.unlock()
+        let state = observation?()
+
+        lock.lock()
+        shutdownCount += 1
+        shutdownOnMainThread = Thread.isMainThread
+        tapInstalledAtShutdown = state?.tapInstalled
+        generationAtShutdown = state?.generation
+        lock.unlock()
+        recorder?.record(.analyzerShutdown)
+    }
+
+    func recordDeinit() {
+        lock.lock()
+        deinitCount += 1
+        deinitOnMainThread = Thread.isMainThread
+        lock.unlock()
+        recorder?.record(.analyzerDeinit)
+        deinitContinuation.yield()
+        deinitContinuation.finish()
+    }
+
+    func waitForDeinit() async {
+        for await _ in deinitStream { return }
+    }
+
+    func snapshot() -> SpectrumAnalyzerLifetimeSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return SpectrumAnalyzerLifetimeSnapshot(
+            shutdownCount: shutdownCount,
+            deinitCount: deinitCount,
+            shutdownOnMainThread: shutdownOnMainThread,
+            deinitOnMainThread: deinitOnMainThread,
+            tapInstalledAtShutdown: tapInstalledAtShutdown,
+            generationAtShutdown: generationAtShutdown
+        )
+    }
+}
+
 final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
     let submission: SpectrumSubmission
     private let context: UnsafeMutableRawPointer
-    private(set) var shutdownCount = 0
+    private let lifetimeProbe: SpectrumAnalyzerLifetimeProbe
 
-    init(submitSucceeds: Bool) {
+    init(
+        submitSucceeds: Bool,
+        lifetimeProbe: SpectrumAnalyzerLifetimeProbe
+    ) {
+        self.lifetimeProbe = lifetimeProbe
         context = .allocate(byteCount: 1, alignment: 1)
         context.storeBytes(of: submitSucceeds, as: Bool.self)
         submission = SpectrumSubmission(
@@ -20,10 +134,31 @@ final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
 
     deinit {
         context.deallocate()
+        lifetimeProbe.recordDeinit()
     }
 
     func shutdown() {
-        shutdownCount += 1
+        lifetimeProbe.recordShutdown()
+    }
+}
+
+private final class WeakSpectrumAnalyzerReference {
+    weak var value: StubSpectrumAnalyzer?
+
+    init(_ value: StubSpectrumAnalyzer) {
+        self.value = value
+    }
+}
+
+private final class NoiseEngineReleaseBox: @unchecked Sendable {
+    private var engine: NoiseEngine?
+
+    init(_ engine: NoiseEngine?) {
+        self.engine = engine
+    }
+
+    func release() {
+        engine = nil
     }
 }
 
@@ -31,12 +166,16 @@ final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
 final class SpectrumAnalyzerFactorySpy {
     var setupFails = false
     var submitSucceeds = true
+    var lifecycleRecorder: SpectrumLifecycleRecorder?
     private(set) var sampleRates: [Double] = []
     private(set) var generations: [UInt64] = []
-    private(set) var analyzers: [StubSpectrumAnalyzer] = []
+    private var analyzerReferences: [WeakSpectrumAnalyzerReference] = []
+    private(set) var lifetimeProbes: [SpectrumAnalyzerLifetimeProbe] = []
     private(set) var deliveries: [
         @Sendable (SpectrumSnapshot, UInt64) -> Void
     ] = []
+
+    var createdAnalyzerCount: Int { analyzerReferences.count }
 
     var factory: SpectrumAnalyzerFactory {
         { [weak self] sampleRate, generation, deliver in
@@ -45,13 +184,24 @@ final class SpectrumAnalyzerFactorySpy {
             generations.append(generation)
             guard !setupFails else { return nil }
 
-            let analyzer = StubSpectrumAnalyzer(
-                submitSucceeds: submitSucceeds
+            let lifetimeProbe = SpectrumAnalyzerLifetimeProbe(
+                recorder: lifecycleRecorder
             )
-            analyzers.append(analyzer)
+            let analyzer = StubSpectrumAnalyzer(
+                submitSucceeds: submitSucceeds,
+                lifetimeProbe: lifetimeProbe
+            )
+            analyzerReferences.append(
+                WeakSpectrumAnalyzerReference(analyzer)
+            )
+            lifetimeProbes.append(lifetimeProbe)
             deliveries.append(deliver)
             return analyzer
         }
+    }
+
+    func analyzer(at index: Int) -> StubSpectrumAnalyzer? {
+        analyzerReferences[index].value
     }
 
     func complete(
@@ -75,17 +225,18 @@ struct NoiseEngineSpectrumTapTests {
 
         engine._installSpectrumTap()
         #expect(engine.isSpectrumTapInstalled)
-        #expect(spy.analyzers.count == 1)
+        #expect(spy.createdAnalyzerCount == 1)
 
         engine._installSpectrumTap()
-        #expect(spy.analyzers.count == 1)
+        #expect(spy.createdAnalyzerCount == 1)
 
         engine._removeSpectrumTap()
         #expect(!engine.isSpectrumTapInstalled)
-        #expect(spy.analyzers[0].shutdownCount == 1)
+        #expect(spy.lifetimeProbes[0].snapshot().shutdownCount == 1)
+        #expect(spy.lifetimeProbes[0].snapshot().deinitCount == 1)
 
         engine._removeSpectrumTap()
-        #expect(spy.analyzers[0].shutdownCount == 1)
+        #expect(spy.lifetimeProbes[0].snapshot().shutdownCount == 1)
     }
 
     @Test func enablementRespectsPlaybackState() {
@@ -94,7 +245,7 @@ struct NoiseEngineSpectrumTapTests {
         stopped.spectrumAnalysisEnabled = false
         stopped.spectrumAnalysisEnabled = true
         #expect(!stopped.isSpectrumTapInstalled)
-        #expect(stoppedSpy.analyzers.isEmpty)
+        #expect(stoppedSpy.createdAnalyzerCount == 0)
 
         let playingSpy = SpectrumAnalyzerFactorySpy()
         let playing = makeEngine(playingSpy)
@@ -102,7 +253,9 @@ struct NoiseEngineSpectrumTapTests {
         playing._installSpectrumTap()
         playing.spectrumAnalysisEnabled = false
         #expect(!playing.isSpectrumTapInstalled)
-        #expect(playingSpy.analyzers[0].shutdownCount == 1)
+        #expect(
+            playingSpy.lifetimeProbes[0].snapshot().shutdownCount == 1
+        )
     }
 
     @Test func stoppingRemovesTapAndJoinsAnalyzer() {
@@ -115,7 +268,69 @@ struct NoiseEngineSpectrumTapTests {
 
         #expect(!engine.isPlaying)
         #expect(!engine.isSpectrumTapInstalled)
-        #expect(spy.analyzers[0].shutdownCount == 1)
+        #expect(spy.lifetimeProbes[0].snapshot().shutdownCount == 1)
+    }
+
+    @Test func removalInvalidatesGenerationBeforeShutdownAndDestruction() {
+        let recorder = SpectrumLifecycleRecorder()
+        let spy = SpectrumAnalyzerFactorySpy()
+        spy.lifecycleRecorder = recorder
+        let engine = makeEngine(spy)
+        engine._setPlayingForTesting(true)
+        engine._installSpectrumTap()
+        let installedGeneration = engine._spectrumGeneration
+
+        #expect(spy.analyzer(at: 0) != nil)
+        let lifetimeProbe = spy.lifetimeProbes[0]
+        lifetimeProbe.inspectShutdown { [weak engine] in
+            MainActor.assumeIsolated {
+                SpectrumShutdownObservation(
+                    tapInstalled: engine?.isSpectrumTapInstalled,
+                    generation: engine?._spectrumGeneration
+                )
+            }
+        }
+        engine._removeSpectrumTap()
+
+        let snapshot = lifetimeProbe.snapshot()
+        #expect(snapshot.tapInstalledAtShutdown == false)
+        #expect(snapshot.generationAtShutdown! > installedGeneration)
+        #expect(snapshot.shutdownCount == 1)
+        #expect(snapshot.deinitCount == 1)
+        #expect(spy.analyzer(at: 0) == nil)
+        #expect(
+            recorder.snapshot()
+                == [.analyzerShutdown, .analyzerDeinit]
+        )
+    }
+
+    @Test func detachedLastReleaseRunsTeardownOnMainActor() async throws {
+        let recorder = SpectrumLifecycleRecorder()
+        let spy = SpectrumAnalyzerFactorySpy()
+        spy.lifecycleRecorder = recorder
+        var engine: NoiseEngine? = makeEngine(spy)
+        engine?._setPlayingForTesting(true)
+        engine?._installSpectrumTap()
+        let lifetimeProbe = spy.lifetimeProbes[0]
+        #expect(spy.analyzer(at: 0) != nil)
+        let releaseBox = NoiseEngineReleaseBox(engine)
+        engine = nil
+
+        await Task.detached {
+            releaseBox.release()
+        }.value
+        await lifetimeProbe.waitForDeinit()
+
+        let snapshot = lifetimeProbe.snapshot()
+        #expect(snapshot.shutdownCount == 1)
+        #expect(snapshot.deinitCount == 1)
+        #expect(snapshot.shutdownOnMainThread == true)
+        #expect(snapshot.deinitOnMainThread == true)
+        #expect(spy.analyzer(at: 0) == nil)
+        #expect(
+            recorder.snapshot()
+                == [.analyzerShutdown, .analyzerDeinit]
+        )
     }
 
     @Test func setupAndSubmissionFailuresAreNonFatal() throws {
@@ -150,7 +365,7 @@ struct NoiseEngineSpectrumTapTests {
             submitSpectrumChanges += 1
         }
         submitEngine._installSpectrumTap()
-        let analyzer = try #require(submitSpy.analyzers.first)
+        let analyzer = try #require(submitSpy.analyzer(at: 0))
         let samples = [Float](repeating: 0, count: SpectrumFFT.sampleCount)
         let accepted = samples.withUnsafeBufferPointer { buffer in
             analyzer.submission.submit(

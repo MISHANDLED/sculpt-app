@@ -127,11 +127,15 @@ struct SpectrumAnalyzerTests {
     @Test func shutdownWaitsForInFlightDeliveryBeforeDestruction() async throws {
         let enteredDelivery = DispatchSemaphore(value: 0)
         let releaseDelivery = DispatchSemaphore(value: 0)
+        let enteredShutdownJoin = DispatchSemaphore(value: 0)
         let shutdownState = SpectrumAnalyzerDeliveryState()
         let analyzer = SpectrumAnalyzer(
             sampleRate: 44_100,
             generation: 9,
-            pollInterval: .milliseconds(1)
+            pollInterval: .milliseconds(1),
+            beforeShutdownJoin: {
+                enteredShutdownJoin.signal()
+            }
         ) { _, _ in
             enteredDelivery.signal()
             releaseDelivery.wait()
@@ -159,7 +163,14 @@ struct SpectrumAnalyzerTests {
             analyzer.shutdown()
             shutdownState.increment()
         }
-        try await Task.sleep(for: .milliseconds(10))
+        let shutdownReachedJoin = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(
+                    returning: enteredShutdownJoin.wait(timeout: .now() + 1)
+                )
+            }
+        }
+        #expect(shutdownReachedJoin == .success)
         #expect(shutdownState.value() == 0)
 
         releaseDelivery.signal()
@@ -170,11 +181,15 @@ struct SpectrumAnalyzerTests {
     @Test func concurrentShutdownCallsBothWaitForInFlightDelivery() async throws {
         let enteredDelivery = DispatchSemaphore(value: 0)
         let releaseDelivery = DispatchSemaphore(value: 0)
+        let enteredShutdownJoin = DispatchSemaphore(value: 0)
         let shutdownState = SpectrumAnalyzerDeliveryState()
         let analyzer = SpectrumAnalyzer(
             sampleRate: 44_100,
             generation: 10,
-            pollInterval: .milliseconds(1)
+            pollInterval: .milliseconds(1),
+            beforeShutdownJoin: {
+                enteredShutdownJoin.signal()
+            }
         ) { _, _ in
             enteredDelivery.signal()
             releaseDelivery.wait()
@@ -203,12 +218,26 @@ struct SpectrumAnalyzerTests {
             analyzer.shutdown()
             shutdownState.increment()
         }
-        try await Task.sleep(for: .milliseconds(10))
         let secondShutdown = Task.detached {
             analyzer.shutdown()
             shutdownState.increment()
         }
-        try await Task.sleep(for: .milliseconds(10))
+        let firstReachedJoin = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(
+                    returning: enteredShutdownJoin.wait(timeout: .now() + 1)
+                )
+            }
+        }
+        let secondReachedJoin = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(
+                    returning: enteredShutdownJoin.wait(timeout: .now() + 1)
+                )
+            }
+        }
+        #expect(firstReachedJoin == .success)
+        #expect(secondReachedJoin == .success)
         #expect(shutdownState.value() == 0)
 
         releaseDelivery.signal()

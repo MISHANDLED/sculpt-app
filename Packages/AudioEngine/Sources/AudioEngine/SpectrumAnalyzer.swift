@@ -52,6 +52,7 @@ final class SpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
     private let queueKey: DispatchSpecificKey<UInt8>
     private let timer: DispatchSourceTimer
     private let stopped: OpaquePointer
+    private let beforeShutdownJoin: (@Sendable () -> Void)?
 
     convenience init?(
         sampleRate: Double,
@@ -70,6 +71,7 @@ final class SpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
         sampleRate: Double,
         generation: UInt64,
         pollInterval: DispatchTimeInterval,
+        beforeShutdownJoin: (@Sendable () -> Void)? = nil,
         deliver: @escaping @Sendable (SpectrumSnapshot, UInt64) -> Void
     ) {
         guard let fft = SpectrumFFT(sampleRate: sampleRate),
@@ -100,6 +102,7 @@ final class SpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
         self.generation = generation
         self.deliver = deliver
         self.stopped = stopped
+        self.beforeShutdownJoin = beforeShutdownJoin
         submission = SpectrumSubmission(
             context: mailbox.opaqueContext,
             function: { context, samples, count in
@@ -135,6 +138,7 @@ final class SpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
         guard DispatchQueue.getSpecific(key: queueKey) == nil else {
             return
         }
+        beforeShutdownJoin?()
         queue.sync {}
     }
 

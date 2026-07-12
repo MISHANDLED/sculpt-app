@@ -1,4 +1,5 @@
 import Foundation
+import RealtimeAtomics
 import Testing
 @testable import AudioEngine
 
@@ -45,6 +46,24 @@ final class SpectrumMailboxStressState: @unchecked Sendable {
 
 @Suite("Spectrum mailbox")
 struct SpectrumMailboxTests {
+    @Test func fixedCEntrySubmitsThroughMailboxContext() throws {
+        let mailbox = try SpectrumMailboxTestSupport.makeMailbox()
+        let values = SpectrumMailboxTestSupport.constantWindow(0.75)
+
+        let published = values.withUnsafeBufferPointer { buffer in
+            rt_spectrum_mailbox_submit(
+                mailbox.opaqueContext,
+                buffer.baseAddress!,
+                buffer.count
+            )
+        }
+
+        #expect(published)
+        let frame = try #require(mailbox.claimLatest())
+        #expect(frame.samples.allSatisfy { $0 == 0.75 })
+        mailbox.release(frame)
+    }
+
     @Test func platformAtomicCellsAreLockFree() throws {
         let mailbox = try SpectrumMailboxTestSupport.makeMailbox()
         #expect(mailbox.isLockFree)

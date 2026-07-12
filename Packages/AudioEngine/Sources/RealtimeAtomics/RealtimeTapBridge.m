@@ -8,25 +8,21 @@
 @interface RTSpectrumTapContext : NSObject {
 @public
     void *_submitContext;
-    RTSpectrumSubmitFunction _submit;
     void *_lifetimeContext;
     RTSpectrumReleaseFunction _releaseLifetime;
 }
 - (instancetype)initWithSubmitContext:(void *)submitContext
-                                submit:(RTSpectrumSubmitFunction)submit
                        lifetimeContext:(void *)lifetimeContext
                        releaseLifetime:(RTSpectrumReleaseFunction)releaseLifetime;
 @end
 
 @implementation RTSpectrumTapContext
 - (instancetype)initWithSubmitContext:(void *)submitContext
-                                submit:(RTSpectrumSubmitFunction)submit
                        lifetimeContext:(void *)lifetimeContext
                        releaseLifetime:(RTSpectrumReleaseFunction)releaseLifetime {
     self = [super init];
     if (self != nil) {
         _submitContext = submitContext;
-        _submit = submit;
         _lifetimeContext = lifetimeContext;
         _releaseLifetime = releaseLifetime;
     }
@@ -51,7 +47,7 @@ static void rt_spectrum_tap_forward(
     if (channels == NULL || channels[0] == NULL || frameLength == 0) {
         return;
     }
-    context->_submit(
+    rt_spectrum_mailbox_submit(
         context->_submitContext,
         channels[0],
         (intptr_t)frameLength
@@ -63,14 +59,12 @@ void rt_audio_node_install_spectrum_tap(
     uint32_t bus,
     uint32_t bufferSize,
     void *submitContext,
-    RTSpectrumSubmitFunction submit,
     void *lifetimeContext,
     RTSpectrumReleaseFunction releaseLifetime
 ) {
     AVAudioNode *node = (AVAudioNode *)nodePointer;
     RTSpectrumTapContext *context = [[RTSpectrumTapContext alloc]
         initWithSubmitContext:submitContext
-        submit:submit
         lifetimeContext:lifetimeContext
         releaseLifetime:releaseLifetime];
     [node installTapOnBus:bus

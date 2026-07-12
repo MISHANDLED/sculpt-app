@@ -176,7 +176,6 @@ public final class NoiseEngine {
             0,
             Self.spectrumBufferSize,
             submission.context,
-            submission.function,
             lifetimeContext,
             releaseRetainedSpectrumSubmissionOwner
         )

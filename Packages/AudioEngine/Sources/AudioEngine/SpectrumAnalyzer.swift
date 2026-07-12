@@ -4,24 +4,13 @@ import RealtimeAtomics
 struct SpectrumSubmission: @unchecked Sendable {
     let owner: AnyObject
     let context: UnsafeMutableRawPointer
-    let function: @Sendable @convention(c) (
-        UnsafeMutableRawPointer,
-        UnsafePointer<Float>,
-        Int
-    ) -> Bool
 
     init(
         owner: AnyObject,
-        context: UnsafeMutableRawPointer,
-        function: @escaping @Sendable @convention(c) (
-            UnsafeMutableRawPointer,
-            UnsafePointer<Float>,
-            Int
-        ) -> Bool
+        context: UnsafeMutableRawPointer
     ) {
         self.owner = owner
         self.context = context
-        self.function = function
     }
 
     @discardableResult
@@ -29,7 +18,7 @@ struct SpectrumSubmission: @unchecked Sendable {
         _ samples: UnsafePointer<Float>,
         count: Int
     ) -> Bool {
-        function(context, samples, count)
+        rt_spectrum_mailbox_submit(context, samples, count)
     }
 }
 
@@ -108,14 +97,7 @@ final class SpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
         self.beforeShutdownJoin = beforeShutdownJoin
         submission = SpectrumSubmission(
             owner: mailbox,
-            context: mailbox.opaqueContext,
-            function: { context, samples, count in
-                SpectrumMailbox.submit(
-                    context: context,
-                    samples: samples,
-                    count: count
-                )
-            }
+            context: mailbox.opaqueContext
         )
 
         timer.setEventHandler { [weak self] in

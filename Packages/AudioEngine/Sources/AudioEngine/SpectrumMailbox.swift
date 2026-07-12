@@ -19,6 +19,20 @@ private struct SpectrumMailboxProducerControl {
     var sequence1: UInt64
 }
 
+@_cdecl("rt_spectrum_mailbox_submit")
+@inline(never)
+func rtSpectrumMailboxSubmitC(
+    _ context: UnsafeMutableRawPointer,
+    _ samples: UnsafePointer<Float>,
+    _ count: Int
+) -> Bool {
+    SpectrumMailbox.submit(
+        context: context,
+        samples: samples,
+        count: count
+    )
+}
+
 final class SpectrumMailbox: @unchecked Sendable {
     static let sampleCount = 4_096
 
@@ -86,6 +100,7 @@ final class SpectrumMailbox: @unchecked Sendable {
     }
 
     @discardableResult
+    @inline(never)
     static func submit(
         context: UnsafeMutableRawPointer,
         samples: UnsafePointer<Float>,
@@ -175,10 +190,11 @@ final class SpectrumMailbox: @unchecked Sendable {
 
         while sourceOffset < count {
             let accumulatedCount = producer.pointee.accumulatedCount
-            let copyCount = min(
-                Self.sampleCount - accumulatedCount,
-                count - sourceOffset
-            )
+            let accumulatorRemaining = Self.sampleCount - accumulatedCount
+            let sourceRemaining = count - sourceOffset
+            let copyCount = accumulatorRemaining < sourceRemaining
+                ? accumulatorRemaining
+                : sourceRemaining
             memcpy(
                 producer.pointee.accumulator.advanced(by: accumulatedCount),
                 samples.advanced(by: sourceOffset),

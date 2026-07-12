@@ -152,20 +152,41 @@ final class SpectrumSubmissionOwnerLifetimeProbe: @unchecked Sendable {
 }
 
 final class StubSpectrumSubmissionOwner {
-    let context: UnsafeMutableRawPointer
+    private let mailbox: SpectrumMailbox
     private let lifetimeProbe: SpectrumSubmissionOwnerLifetimeProbe
+    private var claimedFrames: [ClaimedSpectrumFrame] = []
+
+    var context: UnsafeMutableRawPointer { mailbox.opaqueContext }
 
     init(
         submitSucceeds: Bool,
         lifetimeProbe: SpectrumSubmissionOwnerLifetimeProbe
     ) {
         self.lifetimeProbe = lifetimeProbe
-        context = .allocate(byteCount: 1, alignment: 1)
-        context.storeBytes(of: submitSucceeds, as: Bool.self)
+        mailbox = SpectrumMailbox()!
+
+        if !submitSucceeds {
+            let values = [Float](
+                repeating: 0,
+                count: SpectrumMailbox.sampleCount
+            )
+            for _ in 0..<2 {
+                values.withUnsafeBufferPointer { buffer in
+                    _ = SpectrumMailbox.submit(
+                        context: mailbox.opaqueContext,
+                        samples: buffer.baseAddress!,
+                        count: buffer.count
+                    )
+                }
+                claimedFrames.append(mailbox.claimLatest()!)
+            }
+        }
     }
 
     deinit {
-        context.deallocate()
+        for frame in claimedFrames {
+            mailbox.release(frame)
+        }
         lifetimeProbe.recordDeinit()
     }
 }
@@ -186,10 +207,7 @@ final class StubSpectrumAnalyzer: SpectrumAnalyzing, @unchecked Sendable {
         )
         submission = SpectrumSubmission(
             owner: owner,
-            context: owner.context,
-            function: { context, _, _ in
-                context.load(as: Bool.self)
-            }
+            context: owner.context
         )
     }
 
@@ -600,10 +618,7 @@ struct NoiseEngineSpectrumTapTests {
             )
         var submission: SpectrumSubmission? = SpectrumSubmission(
             owner: owner!,
-            context: owner!.context,
-            function: { context, _, _ in
-                context.load(as: Bool.self)
-            }
+            context: owner!.context
         )
         var audioEngine: AVAudioEngine? = AVAudioEngine()
         var node: AVAudioUnitEQ? = AVAudioUnitEQ(numberOfBands: 1)
@@ -623,7 +638,6 @@ struct NoiseEngineSpectrumTapTests {
             0,
             AVAudioFrameCount(SpectrumFFT.sampleCount),
             submission!.context,
-            submission!.function,
             Unmanaged.passRetained(submission!.owner).toOpaque(),
             { context in
                 Unmanaged<AnyObject>.fromOpaque(context).release()

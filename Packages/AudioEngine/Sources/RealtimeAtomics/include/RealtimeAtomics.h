@@ -33,7 +33,7 @@ uint8_t rt_atomic_u8_exchange_acq_rel(
     uint8_t desired
 );
 
-typedef bool (*RTSpectrumSubmitFunction)(
+bool rt_spectrum_mailbox_submit(
     void * _Nonnull context,
     const float * _Nonnull samples,
     intptr_t count
@@ -45,7 +45,6 @@ void rt_audio_node_install_spectrum_tap(
     uint32_t bus,
     uint32_t buffer_size,
     void * _Nonnull submit_context,
-    RTSpectrumSubmitFunction _Nonnull submit,
     void * _Nonnull lifetime_context,
     RTSpectrumReleaseFunction _Nonnull release_lifetime
 );

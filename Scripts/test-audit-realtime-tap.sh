@@ -44,6 +44,7 @@ build_root() {
   local root="$TMP_ROOT/$name"
   local objects
   local configuration='Release-iphoneos'
+  local mixed_objects
   local noise_flags=''
   local bridge_flags=''
   local mailbox_flags=''
@@ -66,7 +67,7 @@ build_root() {
       root="$TMP_ROOT/Release-decoy-$name"
       configuration='Profile-iphoneos'
       ;;
-    '' | old-swift-thunk | missing-object | ambiguous-object) ;;
+    '' | old-swift-thunk | missing-object | ambiguous-object | mixed-config) ;;
     *) echo "unknown fixture mutation: $mutation" >&2; exit 1 ;;
   esac
 
@@ -108,6 +109,11 @@ build_root() {
     duplicate="$(dirname "$(dirname "$(dirname "$objects")")")/Duplicate.build/Objects-normal/arm64"
     mkdir -p "$duplicate"
     cp "$objects/SpectrumMailbox.o" "$duplicate/SpectrumMailbox.o"
+  fi
+  if test "$mutation" = mixed-config; then
+    mixed_objects="$(fixture_objects "$root" 'Debug-iphoneos')"
+    mkdir -p "$mixed_objects"
+    mv "$objects/SpectrumMailbox.o" "$mixed_objects/SpectrumMailbox.o"
   fi
 
   printf '%s\n' "$root"
@@ -180,6 +186,8 @@ expect_failure ambiguous-object \
   'SpectrumMailbox.o must resolve exactly once (found 2)'
 expect_failure config-mismatch \
   'invalid object configuration component: Profile-iphoneos'
+expect_failure mixed-config \
+  'object configuration mismatch: Debug-iphoneos != Release-iphoneos'
 expect_failure missing-symbol \
   'fixed spectrum mailbox C entry must resolve exactly once (found 0)'
 expect_failure ambiguous-symbol \

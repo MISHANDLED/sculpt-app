@@ -93,10 +93,121 @@ import MediaPlayer
         #expect(vm.presetToRename == nil)
     }
 
-    @Test func ingestScopeSamplesIgnoredWhenPaused() {
+    @Test func spectrumCallbackIsIgnoredWhilePaused() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        let snapshot = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 0.5),
+            rms: 0.5,
+            peak: 0.5
+        )
+
+        vm.setVisualizationActive(true)
+        engine.onSpectrumSnapshot?(snapshot)
+
+        #expect(vm.spectrumSnapshot == .zero)
+        #expect(vm.spectrumReceivedAt == nil)
+    }
+
+    @Test func spectrumCallbackIsAcceptedWhilePlayingAndVisible() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        let snapshot = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 0.5),
+            rms: 0.5,
+            peak: 0.75
+        )
+
+        vm.setVisualizationActive(true)
+        engine.onPlaybackStateChange?(true)
+        engine.onSpectrumSnapshot?(snapshot)
+
+        #expect(vm.spectrumSnapshot == snapshot)
+        #expect(vm.spectrumReceivedAt != nil)
+    }
+
+    @Test func spectrumCallbackIsIgnoredWhileVisualizationInactive() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        let snapshot = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 0.8),
+            rms: 0.8,
+            peak: 0.8
+        )
+
+        engine.onPlaybackStateChange?(true)
+        engine.onSpectrumSnapshot?(snapshot)
+
+        #expect(vm.spectrumSnapshot == .zero)
+        #expect(vm.spectrumReceivedAt == nil)
+    }
+
+    @Test func inactiveVisualizationClearsTargetAndDisablesAnalysis() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        let now = ContinuousClock().now
+        let snapshot = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 0.8),
+            rms: 0.8,
+            peak: 0.8
+        )
+
+        vm.setVisualizationActive(true)
+        vm._applyPlaybackState(true)
+        vm._ingestSpectrumSnapshot(snapshot, at: now)
+        vm.setVisualizationActive(false)
+
+        #expect(!vm.visualizationActive)
+        #expect(vm.spectrumSnapshot == .zero)
+        #expect(vm.spectrumReceivedAt == nil)
+        #expect(!engine.spectrumAnalysisEnabled)
+    }
+
+    @Test func activeVisualizationReenablesAnalysis() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        #expect(!engine.spectrumAnalysisEnabled)
+
+        vm.setVisualizationActive(true)
+
+        #expect(vm.visualizationActive)
+        #expect(engine.spectrumAnalysisEnabled)
+    }
+
+    @Test func playbackStopClearsSpectrumTarget() {
         let vm = PlaybackViewModel(defaults: freshDefaults())
-        vm._ingestScopeSamples([1, 2, 3])
-        #expect(vm.scopeSamples == [])
+        let now = ContinuousClock().now
+        let snapshot = SpectrumSnapshot(
+            bands: SIMD8<Float>(repeating: 1),
+            rms: 1,
+            peak: 1
+        )
+
+        vm.setVisualizationActive(true)
+        vm._applyPlaybackState(true)
+        vm._ingestSpectrumSnapshot(snapshot, at: now)
+        vm._applyPlaybackState(false)
+
+        #expect(vm.spectrumSnapshot == .zero)
+        #expect(vm.spectrumReceivedAt == nil)
+    }
+
+    @Test func missingSpectrumUpdatesPreservePlaybackTimerAndNowPlaying() {
+        let engine = NoiseEngine()
+        let vm = PlaybackViewModel(engine: engine, defaults: freshDefaults())
+        vm.nowPlayingTitle = "Failure fallback"
+        vm.setVisualizationActive(true)
+        engine.onPlaybackStateChange?(true)
+        vm.startSleepTimer(minutes: 30)
+        vm._sleepTick(now: Date().addingTimeInterval(1))
+
+        #expect(vm.isPlaying)
+        #expect(vm.spectrumSnapshot == .zero)
+        #expect(vm.sleepMinutes == 30)
+        #expect((vm.sleepRemaining ?? 0) > 29 * 60)
+        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        #expect(info?[MPNowPlayingInfoPropertyPlaybackRate] as? Double == 1)
+        vm.cancelSleepTimer()
     }
 
     @Test func startSleepTimerSetsMinutesAndRemaining() {

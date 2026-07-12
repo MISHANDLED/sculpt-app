@@ -16,7 +16,9 @@ final class PlaybackViewModel: ObservableObject {
     }
     @Published private(set) var selection: PresetSelection = .none
     @Published private(set) var isEdited = false
-    @Published private(set) var scopeSamples: [Float] = []
+    @Published private(set) var spectrumSnapshot = SpectrumSnapshot.zero
+    @Published private(set) var spectrumReceivedAt: ContinuousClock.Instant?
+    @Published private(set) var visualizationActive = false
     @Published var errorText: String?
     /// UI-coordination flag: the custom preset (by id) that should enter inline rename.
     /// Set by SculptSheet's Save to hand off to PresetsView; cleared once consumed.
@@ -41,20 +43,27 @@ final class PlaybackViewModel: ObservableObject {
     private var sleepDeadline: Date?
     private var sleepTask: Task<Void, Never>?
     private var nowPlaying: NowPlayingService?
+    private let clock = ContinuousClock()
 
     private static let kSelection = "sculptor.lastSelection"
     private static let kGains = "sculptor.lastGains"
     private static let kVolume = "sculptor.masterVolume"
 
-    init(engine: NoiseEngine = NoiseEngine(), defaults: UserDefaults = .standard) {
+    convenience init(defaults: UserDefaults = .standard) {
+        self.init(engine: NoiseEngine(), defaults: defaults)
+    }
+
+    init(engine: NoiseEngine, defaults: UserDefaults = .standard) {
         self.engine = engine
         self.defaults = defaults
         gains = [Float](repeating: 0, count: 8)
+        engine.spectrumAnalysisEnabled = false
         engine.onPlaybackStateChange = { [weak self] playing in
-            Task { @MainActor in self?.isPlaying = playing }
+            self?._applyPlaybackState(playing)
         }
-        engine.onScopeSamples = { [weak self] window in
-            Task { @MainActor in self?._ingestScopeSamples(window) }
+        engine.onSpectrumSnapshot = { [weak self] snapshot in
+            guard let self else { return }
+            self._ingestSpectrumSnapshot(snapshot, at: self.clock.now)
         }
         let storedVolume = (defaults.object(forKey: Self.kVolume) as? Double).map(Float.init) ?? 1.0
         masterVolume = storedVolume
@@ -103,16 +112,18 @@ final class PlaybackViewModel: ObservableObject {
             cancelSleepTimer()
         } else {
             errorText = nil
-            do { try engine.start() }
-            catch { errorText = error.localizedDescription }
-            isPlaying = engine.isPlaying
+            do {
+                try engine.start()
+            } catch {
+                errorText = error.localizedDescription
+            }
+            _applyPlaybackState(engine.isPlaying)
         }
     }
 
     private func stopPlayback(fade: TimeInterval = 0.15) {
         engine.stop(fadeDuration: fade)
-        scopeSamples = []
-        isPlaying = engine.isPlaying
+        _applyPlaybackState(engine.isPlaying)
     }
 
     func setGain(band: Int, dB: Float) {
@@ -237,14 +248,28 @@ final class PlaybackViewModel: ObservableObject {
         nowPlaying?.update(title: nowPlayingTitle, isPlaying: isPlaying)
     }
 
-    func _ingestScopeSamples(_ window: [Float]) {
-        guard isPlaying else { return }
-        scopeSamples = window
+    func _applyPlaybackState(_ playing: Bool) {
+        isPlaying = playing
+        if !playing { clearSpectrumTarget() }
     }
 
-    /// Scene-phase hook: tear the scope tap down in background, restore in foreground.
-    func setScopeActive(_ active: Bool) {
-        engine.scopeEnabled = active
-        if !active { scopeSamples = [] }
+    func _ingestSpectrumSnapshot(
+        _ snapshot: SpectrumSnapshot,
+        at instant: ContinuousClock.Instant
+    ) {
+        guard isPlaying, visualizationActive else { return }
+        spectrumSnapshot = snapshot
+        spectrumReceivedAt = instant
+    }
+
+    func setVisualizationActive(_ active: Bool) {
+        visualizationActive = active
+        engine.spectrumAnalysisEnabled = active
+        if !active { clearSpectrumTarget() }
+    }
+
+    private func clearSpectrumTarget() {
+        spectrumSnapshot = .zero
+        spectrumReceivedAt = nil
     }
 }

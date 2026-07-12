@@ -7,6 +7,13 @@ struct RootView: View {
     @State private var showPresets = false
     @Environment(\.scenePhase) private var scenePhase
 
+    private var visualizationActive: Bool {
+        VisualizationPolicy.isActive(
+            sceneIsActive: scenePhase == .active,
+            presetsPresented: showPresets
+        )
+    }
+
     var body: some View {
         HomeView(
             vm: vm,
@@ -21,8 +28,8 @@ struct RootView: View {
         .fullScreenCover(isPresented: $showPresets) {
             PresetsView(vm: vm)
         }
-        .onChange(of: scenePhase) { _, phase in
-            vm.setScopeActive(phase == .active)
+        .onChange(of: visualizationActive, initial: true) { _, active in
+            vm.setVisualizationActive(active)
         }
     }
 }

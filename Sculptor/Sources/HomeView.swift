@@ -90,12 +90,16 @@ struct HomeView: View {
 
     private var heroCenter: some View {
         VStack(spacing: DockSpacing.lg) {
-            PlayHeroButton(isPlaying: vm.isPlaying) { vm.togglePlay() }
-            ScopeVisualizer(samples: vm.scopeSamples)
-                .frame(height: 80)
-                .padding(.horizontal, DockSpacing.xl)
+            PlayHeroButton(isPlaying: vm.isPlaying) {
+                vm.togglePlay()
+            }
+
             HStack(spacing: DockSpacing.xl * 2) {
-                VolumeKnob(value: $vm.masterVolume, icon: "speaker.wave.2.fill", label: "NOISE")
+                VolumeKnob(
+                    value: $vm.masterVolume,
+                    icon: "speaker.wave.2.fill",
+                    label: "NOISE"
+                )
                 VolumeKnob(
                     value: Binding(
                         get: { systemVolume.level },
@@ -105,13 +109,19 @@ struct HomeView: View {
                     label: "PHONE"
                 )
             }
-            .padding(.top, DockSpacing.sm)
-            .background(HiddenVolumeHost(volume: systemVolume).frame(width: 1, height: 1))
+            .background(
+                HiddenVolumeHost(volume: systemVolume)
+                    .frame(width: 1, height: 1)
+            )
+
             Text(vm.isPlaying ? "Playing · tap to pause" : "Paused")
                 .font(DockType.font(12))
                 .foregroundStyle(DockColor.textTertiary)
+
             if let err = vm.errorText {
-                Text(err).font(DockType.font(12)).foregroundStyle(.red)
+                Text(err)
+                    .font(DockType.font(12))
+                    .foregroundStyle(.red)
             }
         }
     }

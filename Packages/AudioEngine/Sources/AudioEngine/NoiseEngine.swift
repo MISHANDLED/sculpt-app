@@ -65,6 +65,7 @@ public final class NoiseEngine {
     }
 
     public var onPlaybackStateChange: (@MainActor @Sendable (Bool) -> Void)?
+    public var onPlaybackRequestInvalidated: (@MainActor @Sendable () -> Void)?
     public var onSpectrumSnapshot:
         (@MainActor @Sendable (
             SpectrumSnapshot,
@@ -384,6 +385,7 @@ public final class NoiseEngine {
         spectrumGeneration &+= 1
         spectrumAnalyzer?.shutdown()
         playbackGraphHooks.stop(engine)
+        audioSessionCoordinator.requestInactive(.deactivate)
         notificationCenter.removeObserver(self)
         stateL.deinitialize(count: 1)
         stateL.deallocate()
@@ -507,6 +509,7 @@ public final class NoiseEngine {
         _removeSpectrumTap()
         finishStop(inactivePolicy: inactivePolicy)
         isPlaying = false
+        notifyPlaybackRequestInvalidated()
     }
 
     /// Ramps the mixer to silence over `fadeDuration`, then stops the engine.
@@ -520,6 +523,7 @@ public final class NoiseEngine {
         fadeTask?.cancel()
         _removeSpectrumTap()
         isPlaying = false
+        notifyPlaybackRequestInvalidated()
         let steps = Self.fadeStepCount(for: fadeDuration)
         let curve = Fade.curve(
             from: engine.mainMixerNode.outputVolume,
@@ -547,10 +551,16 @@ public final class NoiseEngine {
         _lastStopDeactivatedSession = inactivePolicy == .deactivate
     }
 
-    private func invalidatePlaybackRequest(clearResumeIntent: Bool) {
+    private func invalidatePlaybackRequest(
+        clearResumeIntent: Bool
+    ) {
         playbackGeneration += 1
         isPlaybackRequested = false
         if clearResumeIntent { clearInterruptionResumeIntent() }
+    }
+
+    private func notifyPlaybackRequestInvalidated() {
+        onPlaybackRequestInvalidated?()
     }
 
     private func clearInterruptionResumeIntent() {
@@ -644,9 +654,7 @@ public final class NoiseEngine {
     /// mediaserverd died: every node in the old graph is invalid. Rebuild from
     /// scratch, restore EQ state, and remain paused until explicit user action.
     func _recoverFromMediaServicesReset() {
-        playbackGeneration += 1
-        isPlaybackRequested = false
-        clearInterruptionResumeIntent()
+        invalidatePlaybackRequest(clearResumeIntent: true)
         fadeTask?.cancel()
         fadeTask = nil
         isFading = false
@@ -664,5 +672,6 @@ public final class NoiseEngine {
         eq.globalGain = globalGainState
         isPlaying = false
         audioSessionCoordinator.requestInactive(.systemManaged)
+        notifyPlaybackRequestInvalidated()
     }
 }

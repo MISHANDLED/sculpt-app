@@ -189,6 +189,44 @@ private func waitForPlaybackActivation(
         #expect(vm.errorText != nil)
     }
 
+    @Test func mediaResetWhileStartingLetsNextTapStartPlayback() async throws {
+        let (vm, engine, session, graph) = makePendingStartViewModel()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        engine._recoverFromMediaServicesReset()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        session.completeNext(.success(()))
+        session.completeNext(.success(()))
+        for _ in 0..<20 where !vm.isPlaying { await Task.yield() }
+
+        #expect(vm.isPlaying)
+        #expect(engine.isPlaybackRequested)
+        #expect(session.activationCount() == 2)
+        #expect(graph.startCount == 1)
+        #expect(vm.errorText == nil)
+    }
+
+    @Test func immediateMediaResetLetsNextTapStartPlayback() async throws {
+        let (vm, engine, session, graph) = makePendingStartViewModel()
+
+        vm.togglePlay()
+        engine._recoverFromMediaServicesReset()
+        vm.togglePlay()
+        #expect(await waitForPlaybackActivation(session))
+
+        session.completeNext(.success(()))
+        for _ in 0..<20 where !vm.isPlaying { await Task.yield() }
+
+        #expect(vm.isPlaying)
+        #expect(engine.isPlaybackRequested)
+        #expect(session.activationCount() == 1)
+        #expect(graph.startCount == 1)
+        #expect(vm.errorText == nil)
+    }
+
     @Test func selectPresetSetsBuiltinSelection() {
         let vm = PlaybackViewModel(defaults: freshDefaults())
         vm.select(.pink)

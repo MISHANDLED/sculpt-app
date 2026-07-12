@@ -40,6 +40,34 @@ private final class InvalidGraphLifecycleProbe {
 @MainActor
 @Suite("Media services reset recovery")
 struct NoiseEngineMediaResetTests {
+    @Test func resetNotifiesRequestInvalidationAfterSystemManagedIntent() async {
+        let session = EngineSessionCoordinatorProbe()
+        let graph = PlaybackGraphProbe()
+        let engine = NoiseEngine(
+            notificationCenter: NotificationCenter(),
+            audioSessionCoordinator: session,
+            playbackGraphHooks: graph.hooks
+        )
+        engine.spectrumAnalysisEnabled = false
+        var invalidationCount = 0
+        var policyAtInvalidation: AudioSessionInactivePolicy?
+        engine.onPlaybackRequestInvalidated = {
+            invalidationCount += 1
+            policyAtInvalidation = session.policies().last
+        }
+        let staleStart = Task { try await engine.start() }
+        #expect(await waitForActivation(session))
+
+        engine._recoverFromMediaServicesReset()
+
+        #expect(invalidationCount == 1)
+        #expect(policyAtInvalidation == .systemManaged)
+        session.completeNext(.success(()))
+        await #expect(throws: CancellationError.self) {
+            try await staleStart.value
+        }
+    }
+
     @Test func resetRacingBlockedActivationRemainsPausedUntilExplicitStart() async throws {
         let session = EngineSessionCoordinatorProbe()
         let graph = PlaybackGraphProbe()

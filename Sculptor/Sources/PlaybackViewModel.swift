@@ -62,6 +62,9 @@ final class PlaybackViewModel: ObservableObject {
         engine.onPlaybackStateChange = { [weak self] playing in
             self?._applyPlaybackState(playing)
         }
+        engine.onPlaybackRequestInvalidated = { [weak self] in
+            self?.cancelPendingStartAfterEngineInvalidation()
+        }
         engine.onSpectrumSnapshot = { [weak self] snapshot, analyzedAt in
             guard let self else { return }
             self._ingestSpectrumSnapshot(snapshot, at: analyzedAt)
@@ -125,6 +128,13 @@ final class PlaybackViewModel: ObservableObject {
 
     private var hasEffectivePlaybackIntent: Bool {
         isPlaying || startTask != nil || engine.isPlaybackRequested
+    }
+
+    private func cancelPendingStartAfterEngineInvalidation() {
+        guard let pendingStart = startTask else { return }
+        startRequestID += 1
+        startTask = nil
+        pendingStart.cancel()
     }
 
     private func beginPlaybackRequest() {

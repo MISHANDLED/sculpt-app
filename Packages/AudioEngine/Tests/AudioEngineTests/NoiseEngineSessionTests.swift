@@ -8,6 +8,42 @@ enum EngineSessionTestError: Error {
     case graphStart
 }
 
+private final class EngineTeardownRecorder: @unchecked Sendable {
+    enum Event: Equatable {
+        case graphStop
+        case inactive(AudioSessionInactivePolicy)
+    }
+
+    private let lock = NSLock()
+    private var events: [Event] = []
+
+    func record(_ event: Event) {
+        lock.withLock { events.append(event) }
+    }
+
+    func snapshot() -> [Event] {
+        lock.withLock { events }
+    }
+}
+
+private final class TeardownSessionCoordinator: AudioSessionCoordinating,
+    @unchecked Sendable
+{
+    private let recorder: EngineTeardownRecorder
+
+    init(recorder: EngineTeardownRecorder) {
+        self.recorder = recorder
+    }
+
+    func activate() async throws {}
+
+    func requestInactive(_ policy: AudioSessionInactivePolicy) {
+        recorder.record(.inactive(policy))
+    }
+
+    func waitUntilIdle() async {}
+}
+
 final class EngineSessionCoordinatorProbe: AudioSessionCoordinating,
     @unchecked Sendable
 {
@@ -185,6 +221,27 @@ struct NoiseEngineSessionTests {
         #expect(!engine.isPlaybackRequested)
         #expect(!engine.isPlaying)
         #expect(session.policies() == [.deactivate])
+    }
+
+    @Test func deinitRequestsSessionDeactivationAfterStoppingGraph() {
+        let recorder = EngineTeardownRecorder()
+        let session = TeardownSessionCoordinator(recorder: recorder)
+        let graphHooks = NoiseEnginePlaybackGraphHooks(
+            isRunning: { _ in false },
+            start: { _ in },
+            stop: { _ in recorder.record(.graphStop) }
+        )
+        var engine: NoiseEngine? = NoiseEngine(
+            notificationCenter: NotificationCenter(),
+            audioSessionCoordinator: session,
+            playbackGraphHooks: graphHooks
+        )
+        weak var releasedEngine = engine
+
+        engine = nil
+
+        #expect(releasedEngine == nil)
+        #expect(recorder.snapshot() == [.graphStop, .inactive(.deactivate)])
     }
 
     @Test func manualStopDeactivatesSession() {

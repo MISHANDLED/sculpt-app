@@ -9,7 +9,7 @@ Dark-only, SwiftUI, iOS 17+.
 - **Five built-in noise colors** — White, Pink, Brown, Grey, and Speech Blocker, all synthesized in real time (no audio files) and loudness-normalized against each other.
 - **Sculpt sheet** — 8-band EQ sliders to shape the spectrum live while it plays.
 - **Custom presets** — save the current sculpt, rename/duplicate/delete/reorder; persisted with SwiftData and restored across launches.
-- **Oscilloscope visualizer** — Windows-Media-Player-style scope fed by a real tap on the audio graph.
+- **Audio-reactive living contours** — a full-screen procedural Metal background driven by the real post-EQ eight-band spectrum, with calm paused drift and reduced Low Power/Reduce Motion profiles.
 - **NOISE + PHONE knobs** — circular glow-ring controls for app volume and hardware volume.
 - **Sleep timer** — 15/30/45/60 minutes with live countdown and fade-out stop.
 - **Plays in the background** — lock-screen Now Playing metadata, remote play/pause, and survives interruptions, route changes (unplugged headphones pause), and media-services resets.
@@ -33,7 +33,7 @@ Open the generated `Sculptor.xcworkspace` and run the `Sculptor` scheme.
 ## Testing
 
 ```bash
-Scripts/test-all.sh   # full suite: 119 tests across 3 schemes
+Scripts/test-all.sh   # full suite across AudioEngine, DesignSystem, and Sculptor
 ```
 
 The script exists because the workspace scheme only runs the app's tests — the two local packages test via their own schemes from inside each package directory. See `CLAUDE.md` for the individual invocations.

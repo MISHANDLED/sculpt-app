@@ -11,24 +11,20 @@ Sculptor — iOS procedural-noise app (myNoise-style): synthesized white/pink/br
 ```bash
 tuist generate --no-open      # regenerate Sculptor.xcworkspace after ANY Project.swift/package structure change
 
-Scripts/test-all.sh           # FULL test suite (119 tests) — the only "full suite" command
-```
+Scripts/test-all.sh           # FULL test suite across all three schemes
 
-Full suite is **three** xcodebuild invocations (the script wraps them). Local-package schemes are invisible to `-workspace`; each package tests from inside its own directory:
-
-```bash
-# app tests only (45) — from repo root
+# app tests — from repo root
 xcodebuild test -workspace Sculptor.xcworkspace -scheme Sculptor-Workspace -destination "platform=iOS Simulator,name=iPhone 16"
 
-# package tests — from inside the package dir
-cd Packages/AudioEngine  && xcodebuild test -scheme AudioEngine  -destination "platform=iOS Simulator,name=iPhone 16"   # 51
-cd Packages/DesignSystem && xcodebuild test -scheme DesignSystem -destination "platform=iOS Simulator,name=iPhone 16"   # 23
+# package tests — from inside each package directory
+cd Packages/AudioEngine  && xcodebuild test -scheme AudioEngine  -destination "platform=iOS Simulator,name=iPhone 16"
+cd Packages/DesignSystem && xcodebuild test -scheme DesignSystem -destination "platform=iOS Simulator,name=iPhone 16"
 
 # single test file
-xcodebuild test ... -only-testing:AudioEngineTests/DownsampleTests
+xcodebuild test ... -only-testing:AudioEngineTests/SpectrumFFTTests
 ```
 
-A green `Sculptor-Workspace` run alone is NOT "tests pass" — it silently skips the 74 package tests.
+A green `Sculptor-Workspace` run alone is NOT "tests pass" — it silently skips both package suites.
 
 xcodebuild gotchas:
 - Output buffers: never pipe xcodebuild to grep (looks like a hang). Redirect to a log file, then inspect it.
@@ -41,24 +37,25 @@ Run the app: build the `Sculptor` scheme, then `xcrun simctl install/launch boot
 
 Three modules, strict dependency direction: `Sculptor (app) → Packages/AudioEngine + Packages/DesignSystem` (packages don't know each other or the app).
 
-**Packages/AudioEngine** — the defensible core, UI-free.
-- `NoiseEngine` (public final class): owns the AVAudioEngine graph `AVAudioSourceNode (synth noise) → 8-band AVAudioUnitEQ → mainMixer`. Also: scope tap on EQ output (downsampled to 128 pts via `onScopeSamples` callback), fade-out on stop, interruption/route-change/media-services-reset recovery, background-audio session. Threading: RT audio callback fills buffers; state mutations hop to `@MainActor`.
-- Pure decision logic lives in caseless enums so it's unit-testable without audio hardware: `AudioSessionPolicy` (interruption/route actions), `Fade.curve`, `Downsample.resample`, `NoisePreset` (5 builtin presets + per-preset gain tables + loudness-normalizing global gain).
+**Packages/AudioEngine** — the defensible UI-free core.
+- `NoiseEngine` owns `AVAudioSourceNode (synth noise) → 8-band AVAudioUnitEQ → mainMixer`, post-EQ spectrum capture/analysis, fade-out, interruption/route/media-reset recovery, and the background-audio session. Control state is `@MainActor`; the render callback uses only preallocated source state and a raw spectrum submission handle.
+- `SpectrumMailbox` uses the local `RealtimeAtomics` C11 target for iOS 17-compatible lock-free slot transitions. `SpectrumAnalyzer` polls the newest complete frame and reuses `SpectrumFFT`/Accelerate storage.
+- Pure decision logic remains in caseless enums: `AudioSessionPolicy`, `Fade`, and `NoisePreset`.
 
 **Packages/DesignSystem** — Dock/Blinkit visual layer, app-agnostic components.
-- `Tokens/` (DockColor teal #2ED3B7 accent, DockType, DockMetrics), `Components/` (PlayHeroButton, VolumeKnob + KnobGeometry, BandSlider, ScopeVisualizer, MiniEQIcon, PresetRow, PresetChip, DockCard).
-- Bundles Lexend fonts as SPM resources (`Bundle.module`). **Trap:** `.ttf` FILENAMES are `Lexend-*` but the fonts' internal PostScript names are `Dock-Lexend-*` — `Font.custom`/`UIFont(name:)` must use `Dock-Lexend-*` or you silently get system font. `FontRegistrar.registerFonts()` must run at app start.
-- View-geometry math is in caseless enums beside each component (`ScopeGeometry`, `SliderGeometry`, `MiniEQGeometry`) so it tests without rendering.
+- `Tokens/` provides `DockColor`, `DockType`, and `DockMetrics`; `Components/` provides `PlayHeroButton`, `VolumeKnob`/`KnobGeometry`, `BandSlider`, `MiniEQIcon`, `PresetRow`, `PresetChip`, and `DockCard`.
+- Lexend fonts are SPM resources. Their filenames are `Lexend-*`, but internal PostScript names are `Dock-Lexend-*`; `Font.custom`/`UIFont(name:)` must use the internal names and `FontRegistrar.registerFonts()` must run at app start.
+- View geometry remains in caseless enums such as `SliderGeometry` and `MiniEQGeometry`.
 
 **Sculptor (app)** — SwiftUI shell, no tab bar.
-- `RootView` owns the single `PlaybackViewModel` (`@StateObject`, injected everywhere as `@ObservedObject`) plus navigation state. Home (`HomeView`) = hero play button + scope + NOISE/PHONE knobs + preset chip rail; Sculpt = sheet (`SculptSheet`); Presets = fullScreenCover (`PresetsView`).
-- `PlaybackViewModel` is the coordination hub: gains, `PresetSelection` (none/builtin/custom enum), isEdited, sleep timer (1 Hz tick + deadline), master volume, scope samples, Save→rename handoff (`presetToRename`). Cross-view coordination goes through @Published VM state, NOT callback closures.
-- Persistence: SwiftData `@Model CustomPreset` (container at app root); active selection persists via `SelectionPersistence.token/parse` string tokens.
-- `SystemVolume`: KVO bridge to `AVAudioSession.outputVolume` + hidden `MPVolumeView` slider for setting hardware volume (PHONE knob).
+- `RootView` owns one `PlaybackViewModel` and navigation state. Home renders `RippleBackground` behind its controls; Sculpt is an opaque sheet that leaves the uncovered Home effect active; Presets is a full-screen cover that disables analysis/rendering.
+- `PlaybackViewModel` coordinates gains, `PresetSelection`, edits, sleep timer, master volume, finite spectrum targets/timestamps, Home visibility, Now Playing, and Save→rename handoff.
+- `RippleAnimationState` provides deterministic attack/release/stale decay. `RippleBackground` binds its uniforms to app-target `LivingContours.metal`.
+- SwiftData persists `CustomPreset`; `SelectionPersistence` stores the active selection. `SystemVolume` bridges `AVAudioSession.outputVolume` and a hidden `MPVolumeView` for the PHONE knob.
 
 ## Conventions
 
-- **No top-level free functions.** All standalone logic = static methods on caseless enums (`enum Foo { static func bar(...) }`). Enforced repo-wide; keep it that way.
+- **No top-level Swift free functions.** Standalone Swift logic uses static methods on caseless enums. The prefixed `rt_atomic_u8_*` functions in the private C11 shim are the sole C ABI exception.
 - Structure changes (new files, targets, resources): edit `Project.swift` or the relevant `Packages/*/Package.swift`, then `tuist generate`. Never hand-edit generated `.xcworkspace`/`Derived/`.
 - Package manifests: swift-tools-version 6.0, `platforms: [.iOS(.v17)]`, `swiftLanguageModes: [.v5]`.
 - Trunk-based: commit directly on `master`, no feature branches. Remote: `origin` = github.com/MISHANDLED/sculpt-app via the `github.com-mishandled` SSH alias. Commit identity is repo-local git config (`MISHANDLED <52106838+MISHANDLED@users.noreply.github.com>`) — plain `git commit` uses it; never add Co-Authored-By trailers (repo must show a single contributor).

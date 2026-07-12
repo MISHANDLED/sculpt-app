@@ -1,7 +1,6 @@
 #!/bin/bash
-# Full Sculptor test suite = 3 invocations since the SPM restructure (2026-07-05):
-# local-package schemes are invisible to -workspace, so each package runs from its own dir.
-# Expected: AudioEngine 51, DesignSystem 23, app (Sculptor-Workspace) 45 — total 119.
+# Full Sculptor test suite = 3 invocations because local-package schemes are
+# invisible to -workspace. Counts are intentionally not hard-coded.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SIM="${SIM:-$(xcrun simctl list devices available | grep -m1 -o 'iPhone [^(]*' | sed 's/ *$//')}"

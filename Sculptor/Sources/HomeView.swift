@@ -15,6 +15,15 @@ struct HomeView: View {
         ZStack {
             DockColor.background.ignoresSafeArea()
 
+            RippleBackground(
+                snapshot: vm.spectrumSnapshot,
+                spectrumReceivedAt: vm.spectrumReceivedAt,
+                isPlaying: vm.isPlaying,
+                masterVolume: vm.masterVolume,
+                isActive: vm.visualizationActive
+            )
+            .ignoresSafeArea()
+
             VStack(spacing: 0) {
                 topBar
                 Spacer()

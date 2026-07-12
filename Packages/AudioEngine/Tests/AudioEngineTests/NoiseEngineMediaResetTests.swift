@@ -124,6 +124,44 @@ struct NoiseEngineMediaResetTests {
         )
     }
 
+    @Test func resetNotificationRetainsEngineThroughLastExternalRelease() async {
+        let recorder = SpectrumLifecycleRecorder()
+        let graphProbe = InvalidGraphLifecycleProbe(recorder: recorder)
+        let spy = SpectrumAnalyzerFactorySpy()
+        spy.lifecycleRecorder = recorder
+        let center = NotificationCenter()
+        var engine: NoiseEngine? = NoiseEngine(
+            analyzerFactory: spy.factory,
+            notificationCenter: center,
+            graphLifecycleHooks: graphProbe.hooks
+        )
+        engine?._setPlayingForTesting(true)
+        engine?._installSpectrumTap()
+        engine?._setPlayingForTesting(false)
+        weak let releasedEngine = engine
+        let lifetimeProbe = spy.lifetimeProbes[0]
+        graphProbe.markGraphLost()
+
+        center.post(
+            name: AVAudioSession.mediaServicesWereResetNotification,
+            object: nil
+        )
+        engine = nil
+        await lifetimeProbe.waitForDeinit()
+
+        #expect(graphProbe.invalidEQAccessCount == 0)
+        #expect(releasedEngine == nil)
+        #expect(
+            recorder.snapshot()
+                == [
+                    .analyzerShutdown,
+                    .analyzerDeinit,
+                    .graphWillReplace,
+                    .graphDidReplace,
+                ]
+        )
+    }
+
     @Test func resetNotificationHopsToMainActor() async {
         let center = NotificationCenter()
         let engine = NoiseEngine(notificationCenter: center)

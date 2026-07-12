@@ -455,8 +455,8 @@ public final class NoiseEngine {
     @objc nonisolated private func handleMediaServicesReset(
         _ note: Notification
     ) {
-        Task { @MainActor [weak self] in
-            self?._recoverFromMediaServicesReset()
+        Task { @MainActor [self] in
+            _recoverFromMediaServicesReset()
         }
     }
 

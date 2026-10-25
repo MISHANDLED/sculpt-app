@@ -6,6 +6,7 @@ import DesignSystem
 /// and tap routing go through the shared PlaybackViewModel.
 struct PresetChipsRow: View {
     @ObservedObject var vm: PlaybackViewModel
+    let customPresets: [CustomPreset]
 
     private let presets: [(NoisePreset, String)] = [
         (.white, "White"), (.pink, "Pink"), (.brown, "Brown"),
@@ -20,13 +21,25 @@ struct PresetChipsRow: View {
                         vm.select(preset)
                     }
                 }
+                ForEach(customPresets) { preset in
+                    PresetChip(
+                        title: preset.name,
+                        isSelected: !vm.isEdited
+                            && vm.selection == .custom(preset.id)
+                    ) {
+                        vm.applyCustom(
+                            id: preset.id,
+                            gains: preset.gains
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 #Preview {
-    PresetChipsRow(vm: PlaybackViewModel())
+    PresetChipsRow(vm: PlaybackViewModel(), customPresets: [])
         .padding()
         .background(DockColor.background)
 }

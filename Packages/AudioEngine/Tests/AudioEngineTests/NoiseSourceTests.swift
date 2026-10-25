@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AudioEngine
 
@@ -28,4 +29,29 @@ import Testing
 @Test func zeroSeedDoesNotStall() {
     var s = NoiseSource(seed: 0)
     #expect(s.next() != s.next())
+}
+
+@Test func stereoNoiseIsCorrelatedButNotMono() {
+    var source = StereoNoiseSource(leftSeed: 0xAAAA, rightSeed: 0x5555)
+    var left: [Float] = []
+    var right: [Float] = []
+    left.reserveCapacity(10_000)
+    right.reserveCapacity(10_000)
+
+    for _ in 0..<10_000 {
+        let sample = source.next()
+        left.append(sample.left)
+        right.append(sample.right)
+    }
+
+    let crossProduct = zip(left, right).reduce(Float.zero) {
+        $0 + $1.0 * $1.1
+    }
+    let leftEnergy = left.reduce(Float.zero) { $0 + $1 * $1 }
+    let rightEnergy = right.reduce(Float.zero) { $0 + $1 * $1 }
+    let correlation = crossProduct / sqrt(leftEnergy * rightEnergy)
+
+    #expect(correlation > 0.55)
+    #expect(correlation < 0.8)
+    #expect(zip(left, right).contains { $0 != $1 })
 }

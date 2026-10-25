@@ -31,13 +31,14 @@ struct NoiseEnginePlaybackGraphHooks: Sendable {
     )
 }
 
-/// Owns the AVAudioEngine graph: white-noise source → 8-band EQ → output.
+/// Owns the AVAudioEngine graph: noise source → 8-band EQ → tone filter → output.
 /// UI mutates only EQ band gains (audio-unit thread-safe); it never touches
 /// the render callback.
 @MainActor
 public final class NoiseEngine {
     private var engine = AVAudioEngine()
     private var storedEQ: AVAudioUnitEQ
+    private var toneFilter: AVAudioUnitEQ
     private var eq: AVAudioUnitEQ {
         get {
             graphLifecycleHooks.validateEQAccess()
@@ -169,7 +170,7 @@ public final class NoiseEngine {
 
         spectrumGeneration &+= 1
         let installationGeneration = spectrumGeneration
-        let sampleRate = eq.outputFormat(forBus: 0).sampleRate
+        let sampleRate = toneFilter.outputFormat(forBus: 0).sampleRate
         let deliveryGate = spectrumDeliveryGate
         guard let analyzer = analyzerFactory(
             sampleRate,
@@ -192,7 +193,7 @@ public final class NoiseEngine {
             submission.owner
         ).toOpaque()
         rt_audio_node_install_spectrum_tap(
-            Unmanaged.passUnretained(eq).toOpaque(),
+            Unmanaged.passUnretained(toneFilter).toOpaque(),
             0,
             Self.spectrumBufferSize,
             submission.context,
@@ -206,7 +207,7 @@ public final class NoiseEngine {
         guard spectrumTapInstalled || spectrumAnalyzer != nil else { return }
         spectrumDeliveryGate.deactivate()
         if spectrumTapInstalled {
-            eq.removeTap(onBus: 0)
+            toneFilter.removeTap(onBus: 0)
             spectrumTapInstalled = false
         }
         spectrumGeneration &+= 1
@@ -251,10 +252,11 @@ public final class NoiseEngine {
         AudioSessionPolicy.interruptionAction(type: .ended, options: options, wasPlaying: wasPlayingBeforeInterruption) == .resume
     }
 
-    // Per-channel PRNG state, allocated once. Pointers are captured by the
-    // render block so it never retains `self` or allocates on the audio thread.
-    private let stateL = UnsafeMutablePointer<NoiseSource>.allocate(capacity: 1)
-    private let stateR = UnsafeMutablePointer<NoiseSource>.allocate(capacity: 1)
+    // Stereo PRNG state, allocated once. The pointer is captured by the render
+    // block so it never retains `self` or allocates on the audio thread.
+    private let sourceState = UnsafeMutablePointer<StereoNoiseSource>.allocate(
+        capacity: 1
+    )
 
     private static func makeEQ() -> AVAudioUnitEQ {
         let eq = AVAudioUnitEQ(numberOfBands: AudioEngineModule.bandFrequencies.count)
@@ -269,22 +271,43 @@ public final class NoiseEngine {
         return eq
     }
 
+    /// Fixed output voicing that removes inaudible rumble and the upper-band
+    /// hiss left outside the user EQ's highest (8 kHz) parametric band.
+    private static func makeToneFilter() -> AVAudioUnitEQ {
+        let filter = AVAudioUnitEQ(numberOfBands: 2)
+        let highPass = filter.bands[0]
+        highPass.filterType = .highPass
+        highPass.frequency = 35
+        highPass.bandwidth = 0.5
+        highPass.bypass = false
+
+        let lowPass = filter.bands[1]
+        lowPass.filterType = .lowPass
+        lowPass.frequency = 12_000
+        lowPass.bandwidth = 0.5
+        lowPass.bypass = false
+        return filter
+    }
+
     private func buildGraph() {
-        let l = stateL, r = stateR
+        let sourceState = sourceState
         let sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
             for frame in 0..<Int(frameCount) {
+                let sample = sourceState.pointee.next()
                 for (ch, buffer) in abl.enumerated() {
                     let ptr = buffer.mData!.assumingMemoryBound(to: Float.self)
-                    ptr[frame] = (ch == 0) ? l.pointee.next() : r.pointee.next()
+                    ptr[frame] = ch == 0 ? sample.left : sample.right
                 }
             }
             return noErr
         }
         engine.attach(sourceNode)
         engine.attach(eq)
+        engine.attach(toneFilter)
         engine.connect(sourceNode, to: eq, format: outputFormat)
-        engine.connect(eq, to: engine.mainMixerNode, format: outputFormat)
+        engine.connect(eq, to: toneFilter, format: outputFormat)
+        engine.connect(toneFilter, to: engine.mainMixerNode, format: outputFormat)
         engine.mainMixerNode.outputVolume = masterVolume
     }
 
@@ -352,8 +375,13 @@ public final class NoiseEngine {
         self.audioSessionCoordinator = audioSessionCoordinator
         self.playbackGraphHooks = playbackGraphHooks
         storedEQ = Self.makeEQ()
-        stateL.initialize(to: NoiseSource(seed: 0x1234_5678_9ABC_DEF0))
-        stateR.initialize(to: NoiseSource(seed: 0x0FED_CBA9_8765_4321))
+        toneFilter = Self.makeToneFilter()
+        sourceState.initialize(
+            to: StereoNoiseSource(
+                leftSeed: 0x1234_5678_9ABC_DEF0,
+                rightSeed: 0x0FED_CBA9_8765_4321
+            )
+        )
         buildGraph()
 
         notificationCenter.addObserver(
@@ -381,19 +409,19 @@ public final class NoiseEngine {
         if spectrumTapInstalled || spectrumAnalyzer != nil {
             spectrumDeliveryGate.deactivate()
         }
-        if spectrumTapInstalled { eq.removeTap(onBus: 0) }
+        if spectrumTapInstalled { toneFilter.removeTap(onBus: 0) }
         spectrumGeneration &+= 1
         spectrumAnalyzer?.shutdown()
         playbackGraphHooks.stop(engine)
         audioSessionCoordinator.requestInactive(.deactivate)
         notificationCenter.removeObserver(self)
-        stateL.deinitialize(count: 1)
-        stateL.deallocate()
-        stateR.deinitialize(count: 1)
-        stateR.deallocate()
+        sourceState.deinitialize(count: 1)
+        sourceState.deallocate()
     }
 
     public var bandCount: Int { eq.bands.count }
+
+    var _outputHighCutFrequency: Float { toneFilter.bands[1].frequency }
 
     public func centerFrequency(band: Int) -> Float { eq.bands[band].frequency }
 
@@ -664,6 +692,7 @@ public final class NoiseEngine {
         graphLifecycleHooks.willReplaceGraph()
         engine = AVAudioEngine()
         eq = Self.makeEQ()
+        toneFilter = Self.makeToneFilter()
         graphLifecycleHooks.didReplaceGraph()
         buildGraph()
         for (index, gain) in bandGainState.enumerated() {

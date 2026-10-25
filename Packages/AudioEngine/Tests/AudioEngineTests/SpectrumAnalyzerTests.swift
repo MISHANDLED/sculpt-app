@@ -59,7 +59,10 @@ struct SpectrumAnalyzerTests {
                     count: buffer.count
                 )
             }
-            try? await Task.sleep(for: .milliseconds(50))
+            // AVAudioUnit construction in parallel engine tests can briefly
+            // saturate simulator workers; leave enough time for this polling
+            // thread to be scheduled under a full-suite run.
+            try? await Task.sleep(for: .milliseconds(250))
             analyzer.shutdown()
         }
     }

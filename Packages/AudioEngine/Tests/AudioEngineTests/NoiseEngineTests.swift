@@ -12,6 +12,12 @@ import Testing
 }
 
 @MainActor
+@Test func appliesGentleOutputHighCut() {
+    let engine = NoiseEngine()
+    #expect(engine._outputHighCutFrequency == 12_000)
+}
+
+@MainActor
 @Test func setGainClampsToRange() {
     let e = NoiseEngine()
     e.setGain(band: 0, dB: 999)

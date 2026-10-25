@@ -137,7 +137,7 @@ struct HomeView: View {
 
     private var bottomRail: some View {
         HStack(spacing: DockSpacing.md) {
-            PresetChipsRow(vm: vm)
+            PresetChipsRow(vm: vm, customPresets: customPresets)
             Button(action: onOpenSculpt) {
                 HStack(spacing: 6) {
                     Image(systemName: "slider.vertical.3")

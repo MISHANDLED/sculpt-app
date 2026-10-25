@@ -1,12 +1,6 @@
 import AVFoundation
 import RealtimeAtomics
 
-private func releaseRetainedSpectrumSubmissionOwner(
-    _ context: UnsafeMutableRawPointer
-) {
-    Unmanaged<AnyObject>.fromOpaque(context).release()
-}
-
 struct NoiseEngineGraphLifecycleHooks: Sendable {
     let validateEQAccess: @MainActor @Sendable () -> Void
     let willReplaceGraph: @MainActor @Sendable () -> Void
@@ -198,7 +192,7 @@ public final class NoiseEngine {
             Self.spectrumBufferSize,
             submission.context,
             lifetimeContext,
-            releaseRetainedSpectrumSubmissionOwner
+            { Unmanaged<AnyObject>.fromOpaque($0).release() }
         )
         spectrumTapInstalled = true
     }
@@ -311,15 +305,18 @@ public final class NoiseEngine {
         engine.mainMixerNode.outputVolume = masterVolume
     }
 
+    private static let liveAnalyzerFactory: SpectrumAnalyzerFactory = {
+        sampleRate, generation, deliver in
+        SpectrumAnalyzer(
+            sampleRate: sampleRate,
+            generation: generation,
+            deliver: deliver
+        )
+    }
+
     public convenience init() {
         self.init(
-            analyzerFactory: { sampleRate, generation, deliver in
-                SpectrumAnalyzer(
-                    sampleRate: sampleRate,
-                    generation: generation,
-                    deliver: deliver
-                )
-            },
+            analyzerFactory: Self.liveAnalyzerFactory,
             notificationCenter: .default,
             audioSessionCoordinator: AudioSessionCoordinator.shared
         )
@@ -327,13 +324,7 @@ public final class NoiseEngine {
 
     convenience init(notificationCenter: NotificationCenter) {
         self.init(
-            analyzerFactory: { sampleRate, generation, deliver in
-                SpectrumAnalyzer(
-                    sampleRate: sampleRate,
-                    generation: generation,
-                    deliver: deliver
-                )
-            },
+            analyzerFactory: Self.liveAnalyzerFactory,
             notificationCenter: notificationCenter,
             audioSessionCoordinator: AudioSessionCoordinator.shared
         )
@@ -345,13 +336,7 @@ public final class NoiseEngine {
         playbackGraphHooks: NoiseEnginePlaybackGraphHooks = .live
     ) {
         self.init(
-            analyzerFactory: { sampleRate, generation, deliver in
-                SpectrumAnalyzer(
-                    sampleRate: sampleRate,
-                    generation: generation,
-                    deliver: deliver
-                )
-            },
+            analyzerFactory: Self.liveAnalyzerFactory,
             notificationCenter: notificationCenter,
             audioSessionCoordinator: audioSessionCoordinator,
             playbackGraphHooks: playbackGraphHooks

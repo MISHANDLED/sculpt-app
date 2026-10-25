@@ -73,7 +73,12 @@ struct RippleBackgroundTests {
                 for index in 0..<2 {
                     let delta = noiseOffset(after, index: index)
                         - noiseOffset(before, index: index)
-                    #expect(abs(delta - rates[index] / 60) < 0.000_000_2)
+                    // noiseLocal spans up to 500 s × 0.018 = 9, so each
+                    // Float sample carries up to half an ulp at 9.
+                    #expect(
+                        abs(delta - rates[index] / 60)
+                            <= Double(Float(9).ulp)
+                    )
                 }
             }
 

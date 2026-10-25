@@ -37,6 +37,17 @@ public struct VolumeKnob: View {
                 .kerning(2.5)
                 .foregroundStyle(DockColor.textTertiary)
         }
+        // Drag-only control: expose it to VoiceOver as one adjustable element.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label.capitalized) volume")
+        .accessibilityValue("\(Int((value * 100).rounded())) percent")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: value = min(1, value + 0.1)
+            case .decrement: value = max(0, value - 0.1)
+            @unknown default: break
+            }
+        }
     }
 
     private func arc(to trim: CGFloat, color: Color) -> some View {

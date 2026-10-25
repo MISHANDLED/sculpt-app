@@ -37,7 +37,7 @@ final class PlaybackViewModel: ObservableObject {
         didSet { if oldValue != nowPlayingTitle { pushNowPlaying() } }
     }
 
-    let frequencies: [Float] = [60, 125, 250, 500, 1000, 2000, 4000, 8000]
+    let frequencies = AudioEngineModule.bandFrequencies
     private let engine: NoiseEngine
     private let defaults: UserDefaults
     private var sleepDeadline: Date?
@@ -57,7 +57,7 @@ final class PlaybackViewModel: ObservableObject {
     init(engine: NoiseEngine, defaults: UserDefaults = .standard) {
         self.engine = engine
         self.defaults = defaults
-        gains = [Float](repeating: 0, count: 8)
+        gains = [Float](repeating: 0, count: AudioEngineModule.bandFrequencies.count)
         engine.spectrumAnalysisEnabled = false
         engine.onPlaybackStateChange = { [weak self] playing in
             self?._applyPlaybackState(playing)

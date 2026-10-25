@@ -55,7 +55,7 @@ Three modules, strict dependency direction: `Sculptor (app) → Packages/AudioEn
 
 ## Conventions
 
-- **No top-level Swift free functions.** Standalone Swift logic uses static methods on caseless enums. The prefixed `rt_atomic_u8_*` functions in the private C11 shim are the sole C ABI exception.
+- **No top-level Swift free functions.** Standalone Swift logic uses static methods on caseless enums. C ABI exceptions: the prefixed `rt_atomic_u8_*` functions in the private C11 shim, and the `@_cdecl("rt_spectrum_mailbox_submit")` entry in `SpectrumMailbox.swift` (`@_cdecl` requires a global func; `Scripts/audit-realtime-linkage.sh` checks the symbol).
 - Structure changes (new files, targets, resources): edit `Project.swift` or the relevant `Packages/*/Package.swift`, then `tuist generate`. Never hand-edit generated `.xcworkspace`/`Derived/`.
 - Package manifests: swift-tools-version 6.0, `platforms: [.iOS(.v17)]`, `swiftLanguageModes: [.v5]`.
 - Trunk-based: commit directly on `master`, no feature branches. Remote: `origin` = github.com/MISHANDLED/sculpt-app via the `github.com-mishandled` SSH alias. Commit identity is repo-local git config (`MISHANDLED <52106838+MISHANDLED@users.noreply.github.com>`) — plain `git commit` uses it; never add Co-Authored-By trailers (repo must show a single contributor).

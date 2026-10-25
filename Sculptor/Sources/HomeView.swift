@@ -135,6 +135,7 @@ struct HomeView: View {
                         .overlay(Circle().stroke(DockColor.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Presets")
 
                 Menu {
                     Button { vm.cancelSleepTimer() } label: {
@@ -151,6 +152,12 @@ struct HomeView: View {
                     moonLabel
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Sleep timer")
+                .accessibilityValue(
+                    vm.sleepRemaining.map {
+                        SleepFormatting.countdown(Int($0)) + " remaining"
+                    } ?? "Off"
+                )
             }
             .fixedSize()
         }

@@ -19,7 +19,7 @@ struct SculptSheet: View {
 
                 DockCard {
                     HStack(alignment: .bottom, spacing: DockSpacing.xs) {
-                        ForEach(0..<8, id: \.self) { i in
+                        ForEach(vm.frequencies.indices, id: \.self) { i in
                             VStack(spacing: DockSpacing.sm) {
                                 BandSlider(
                                     value: Binding(

@@ -10,6 +10,7 @@ struct HomeView: View {
 
     @Query(sort: \CustomPreset.sortIndex) private var customPresets: [CustomPreset]
     @StateObject private var systemVolume = SystemVolume()
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         ZStack {
@@ -24,17 +25,76 @@ struct HomeView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-                heroCenter
-                Spacer()
-                bottomRail
+            GeometryReader { proxy in
+                layout(fold: activeDivision(in: proxy), in: proxy.size)
             }
         }
         .onChange(of: presetName, initial: true) { _, name in
             vm.nowPlayingTitle = name
         }
+    }
+
+    // MARK: - Layout
+
+    /// iPhone Duo partially folded: keep play and knobs on opposite sides of
+    /// the hinge. Compact height (closed Duo / iPhone landscape): side by side.
+    @ViewBuilder
+    private func layout(fold: CGRect?, in size: CGSize) -> some View {
+        if let fold, fold.height > fold.width {
+            sideBySide(
+                leading: fold.minX,
+                gap: fold.width,
+                trailing: size.width - fold.maxX
+            )
+        } else if let fold {
+            VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    topBar
+                    playButton.frame(maxHeight: .infinity)
+                }
+                .frame(height: max(0, fold.minY))
+                VStack(spacing: 0) {
+                    controls.frame(maxHeight: .infinity)
+                    bottomRail
+                }
+                .padding(.top, fold.height)
+            }
+        } else if verticalSizeClass == .compact {
+            sideBySide(leading: nil, gap: DockSpacing.xl * 2, trailing: nil)
+        } else {
+            VStack(spacing: 0) {
+                topBar
+                Spacer()
+                VStack(spacing: DockSpacing.lg) {
+                    playButton
+                    controls
+                }
+                Spacer()
+                bottomRail
+            }
+        }
+    }
+
+    private func sideBySide(
+        leading: CGFloat?,
+        gap: CGFloat,
+        trailing: CGFloat?
+    ) -> some View {
+        VStack(spacing: 0) {
+            topBar
+            HStack(spacing: gap) {
+                playButton.frame(width: leading.map { max(0, $0) })
+                controls.frame(width: trailing.map { max(0, $0) })
+            }
+            .frame(maxHeight: .infinity)
+            bottomRail
+        }
+    }
+
+    private func activeDivision(in proxy: GeometryProxy) -> CGRect? {
+        guard #available(iOS 27.1, *) else { return nil }
+        return proxy.reservedRegions(kind: .division)
+            .first(where: \.isActive)?.frame
     }
 
     // MARK: - Sections
@@ -97,12 +157,14 @@ struct HomeView: View {
         .padding(DockSpacing.xl)
     }
 
-    private var heroCenter: some View {
-        VStack(spacing: DockSpacing.lg) {
-            PlayHeroButton(isPlaying: vm.isPlaying) {
-                vm.togglePlay()
-            }
+    private var playButton: some View {
+        PlayHeroButton(isPlaying: vm.isPlaying) {
+            vm.togglePlay()
+        }
+    }
 
+    private var controls: some View {
+        VStack(spacing: DockSpacing.lg) {
             HStack(spacing: DockSpacing.xl * 2) {
                 VolumeKnob(
                     value: $vm.masterVolume,

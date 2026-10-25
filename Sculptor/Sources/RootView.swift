@@ -9,7 +9,7 @@ struct RootView: View {
 
     private var visualizationActive: Bool {
         VisualizationPolicy.isActive(
-            sceneIsActive: scenePhase == .active,
+            scenePhase: scenePhase,
             presetsPresented: showPresets
         )
     }

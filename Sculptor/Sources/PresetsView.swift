@@ -22,11 +22,12 @@ struct PresetsView: View {
         (.speechBlocker, "Speech blocker", "Masks nearby conversation")
     ]
 
+    // System NavigationStack toolbar so iPhone Duo can lay the bar out
+    // vertically (closed display, inner landscape).
     var body: some View {
-        ZStack {
-            DockColor.background.ignoresSafeArea()
-            VStack(spacing: 0) {
-                navHeader
+        NavigationStack {
+            ZStack {
+                DockColor.background.ignoresSafeArea()
                 List {
                     Section {
                         ForEach(builtins, id: \.0) { preset, title, subtitle in
@@ -92,32 +93,28 @@ struct PresetsView: View {
                 .scrollContentBackground(.hidden)
                 .environment(\.editMode, $editMode)
             }
+            .navigationTitle("Presets")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Icon + title on every item: vertical bars show icons only.
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Back", systemImage: "chevron.left") { dismiss() }
+                        .tint(DockColor.textPrimary)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(
+                        editMode == .inactive ? "Edit" : "Done",
+                        systemImage: editMode == .inactive ? "pencil" : "checkmark"
+                    ) {
+                        editMode = editMode == .inactive ? .active : .inactive
+                    }
+                    .tint(DockColor.accent)
+                }
+            }
         }
         .onAppear { consumePendingRename() }
         .onChange(of: vm.presetToRename) { _, _ in consumePendingRename() }
         .onChange(of: customPresets.count) { _, _ in consumePendingRename() }
-    }
-
-    private var navHeader: some View {
-        HStack {
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(DockColor.textPrimary)
-            }
-            .buttonStyle(.plain)
-            Spacer()
-            Text("Presets")
-                .font(DockType.font(18, .semibold))
-                .foregroundStyle(DockColor.textPrimary)
-            Spacer()
-            Button(editMode == .inactive ? "Edit" : "Done") {
-                editMode = editMode == .inactive ? .active : .inactive
-            }
-            .font(DockType.font(14, .medium))
-            .foregroundStyle(DockColor.accent)
-        }
-        .padding(DockSpacing.xl)
     }
 
     // MARK: - Actions

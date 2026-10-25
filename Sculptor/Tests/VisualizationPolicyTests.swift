@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 @testable import Sculptor
 
@@ -6,7 +7,7 @@ struct VisualizationPolicyTests {
     @Test func activeHomeEnablesVisualization() {
         #expect(
             VisualizationPolicy.isActive(
-                sceneIsActive: true,
+                scenePhase: .active,
                 presetsPresented: false
             )
         )
@@ -16,7 +17,7 @@ struct VisualizationPolicyTests {
         // Sculpt is deliberately absent from this policy.
         #expect(
             VisualizationPolicy.isActive(
-                sceneIsActive: true,
+                scenePhase: .active,
                 presetsPresented: false
             )
         )
@@ -25,16 +26,26 @@ struct VisualizationPolicyTests {
     @Test func presetsPresentationDisablesVisualization() {
         #expect(
             !VisualizationPolicy.isActive(
-                sceneIsActive: true,
+                scenePhase: .active,
                 presetsPresented: true
             )
         )
     }
 
-    @Test func inactiveSceneDisablesVisualization() {
+    @Test func inactiveButVisibleSceneKeepsVisualization() {
+        // Split View on iPhone Duo / iPad: visible but not focused.
+        #expect(
+            VisualizationPolicy.isActive(
+                scenePhase: .inactive,
+                presetsPresented: false
+            )
+        )
+    }
+
+    @Test func backgroundSceneDisablesVisualization() {
         #expect(
             !VisualizationPolicy.isActive(
-                sceneIsActive: false,
+                scenePhase: .background,
                 presetsPresented: false
             )
         )
